@@ -219,6 +219,17 @@ Notes for hosted use:
 - Links generated in-app already use the current path, so invites work under the repo subpath.
 - Keep the host tab open; it relays group traffic.
 
+## 🌐 Networking: No-Server Mode
+
+This project supports a strict no-external-servers mode. When enabled, the app uses WebRTC with zero STUN/TURN servers (no external network services contacted).
+
+Details:
+- Enabled by default via `NO_EXTERNAL_SERVERS = true` in `app.js`.
+- Works best on LAN or very permissive networks (open NAT/public IP).
+- Across typical home/office NATs, connections may fail without STUN/TURN — this is expected by design when avoiding servers completely.
+
+To allow broader connectivity, set `NO_EXTERNAL_SERVERS = false` and optionally configure TURN (below).
+
 ## 🌐 Networking Setup (TURN-ready)
 
 For toughest NAT scenarios, configure TURN:

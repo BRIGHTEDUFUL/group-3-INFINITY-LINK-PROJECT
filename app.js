@@ -58,6 +58,10 @@ const state = {
 };
 
 // --- WebRTC Config ---
+// Strict no-servers mode: when true, we won't use any external STUN/TURN
+// servers at all. This limits connectivity to very permissive networks or LAN.
+const NO_EXTERNAL_SERVERS = true;
+
 // Base STUN servers
 const RTC_CONFIG = {
     iceServers: [
@@ -78,6 +82,13 @@ const NETWORK_CONFIG = {
 };
 
 function buildRtcConfig() {
+    if (NO_EXTERNAL_SERVERS) {
+        return {
+            iceServers: [],
+            // Keep policy 'all' to allow direct host candidates if any
+            iceTransportPolicy: 'all'
+        };
+    }
     const cfg = {
         iceServers: [...RTC_CONFIG.iceServers],
         iceTransportPolicy: NETWORK_CONFIG.iceTransportPolicy
@@ -620,6 +631,9 @@ function getConnectionStatus() {
         })),
         protocol: state.protocol || 'network',
         activeChatType: state.activeChat.type || 'group',
+        iceServersMode: NO_EXTERNAL_SERVERS ? 'none' : 'stun/turn',
+        iceServersConfigured: NO_EXTERNAL_SERVERS ? 0 : ((RTC_CONFIG.iceServers?.length || 0) + ((NETWORK_CONFIG.useTurn ? NETWORK_CONFIG.turnServers?.length : 0) || 0)),
+        iceTransportPolicy: NO_EXTERNAL_SERVERS ? 'all' : NETWORK_CONFIG.iceTransportPolicy,
         gatewayState: gatewayPC ? {
             connectionState: gatewayPC.connectionState,
             iceConnectionState: gatewayPC.iceConnectionState,
@@ -644,6 +658,7 @@ function refreshDiagnostics() {
                     <div><strong>Peers:</strong> ${status.peersCount}</div>
                     <div><strong>Active Chat:</strong> ${status.activeChatType}</div>
                 </div>
+                <div><strong>ICE:</strong> ${status.iceServersMode} (servers: ${status.iceServersConfigured}, policy: ${status.iceTransportPolicy})</div>
                 <div><strong>Gateway:</strong> ${status.gatewayState ? `${status.gatewayState.connectionState} / ${status.gatewayState.iceConnectionState} / ${status.gatewayState.iceGatheringState}` : 'n/a'}</div>
                 <div>
                     <strong>Peer Channels</strong>
