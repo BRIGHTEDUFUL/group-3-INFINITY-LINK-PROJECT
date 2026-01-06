@@ -3,10 +3,13 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta http-equiv="Content-Security-Policy"
         content="default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src 'self' data:; connect-src 'self' https: data: blob: stun:stun.l.google.com:19302 stun:stun1.l.google.com:19302 stun:stun2.l.google.com:19302 stun:stun3.l.google.com:19302 turn:;">
-    <title>Infinity Link | Multiplex Chat</title>
+    <title>Infinity Link | Real-Time Chat</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="style.css">
     <link
@@ -479,13 +482,19 @@
             </div>
             <p class="hint-text"><ion-icon name="information-circle"></ion-icon> Send this link over chat, email, or SMS</p>
 
-
-
             <div id="host-loading" class="spinner"></div>
 
-            <button class="btn-secondary full-width" onclick="showStep('step-host-2')">
-                <ion-icon name="arrow-forward-circle"></ion-icon> Next: I sent it
-            </button>
+            <div class="actions-row">
+                <button class="btn-secondary full-width" onclick="showStep('step-host-2')">
+                    <ion-icon name="arrow-forward-circle"></ion-icon> Next: I sent it
+                </button>
+            </div>
+            
+            <div class="actions-row">
+                <button class="btn-tertiary full-width" onclick="generateInvite()" title="Generate a new invite for another peer">
+                    <ion-icon name="reload"></ion-icon> Generate Next Invite
+                </button>
+            </div>
         </div>
 
         <!-- HOST: Step 2 -->

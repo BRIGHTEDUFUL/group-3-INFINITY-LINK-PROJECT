@@ -3,6 +3,15 @@
     Handles UI interactions and integrates with the PeerManager for networking.
 */
 
+// --- Simple Reliability Settings ---
+const RELIABILITY_CONFIG = {
+    maxRetries: 2,
+    connectionTimeoutMs: 10000,
+    messageQueueLimit: 100,
+    healthCheckIntervalMs: 10000,
+    autoReconnectEnabled: true
+};
+
 // --- Enhanced State with Dual Chat Support ---
 const state = {
     myId: crypto.randomUUID().substring(0, 8),
@@ -11,6 +20,8 @@ const state = {
     connecting: false,
     pendingMessages: [],
     securityDisabled: true,
+    connectionAttempts: 0,
+    isHealthy: true,
     
     // DUAL CHAT STATE
     groups: {
@@ -60,7 +71,7 @@ const state = {
 // --- WebRTC Config ---
 // Strict no-servers mode: when true, we won't use any external STUN/TURN
 // servers at all. This limits connectivity to very permissive networks or LAN.
-const NO_EXTERNAL_SERVERS = true;
+const NO_EXTERNAL_SERVERS = false;
 
 // Base STUN servers
 const RTC_CONFIG = {
@@ -359,14 +370,26 @@ window.onload = async () => {
             console.log('✓ Lunch protocol link detected');
         } 
         else if (hash.startsWith('#init=')) {
-            // Legacy Network Invitation
+            // Legacy Network Invitation - Auto-join enabled
+            const code = hash.substring(6);
             const codeInput = document.getElementById('join-offer-input');
             if (codeInput) {
-                codeInput.value = hash.substring(6);
-                document.getElementById('step-welcome')?.classList.remove('active');
-                showStep('step-join-1');
+                codeInput.value = code;
             }
-            console.log('✓ Network invitation link detected');
+            document.getElementById('step-welcome')?.classList.remove('active');
+            showStep('step-join-1');
+            
+            // Auto-join without user clicking button
+            console.log('✓ Network invitation link detected - Starting auto-join...');
+            state.connecting = true;
+            setTimeout(() => {
+                try {
+                    joinNetwork();
+                } catch (e) {
+                    console.error('Auto-join failed:', e);
+                    showNotification('Auto-join failed. Please click "Join Room" manually.', 'error');
+                }
+            }, 500);
         }
         
         console.log('✓ Initialization complete');
@@ -551,25 +574,47 @@ function broadcast(msg, excludeId = null) {
     try {
         const msgJson = JSON.stringify(msg);
         let sentCount = 0;
+        let failedCount = 0;
         
         Object.keys(peers).forEach(pid => {
             if (pid !== excludeId) {
                 try {
                     const p = peers[pid];
                     if (p && p.channel && p.channel.readyState === 'open') {
-                        p.channel.send(msgJson);
-                        sentCount++;
+                        try {
+                            p.channel.send(msgJson);
+                            sentCount++;
+                        } catch (sendErr) {
+                            failedCount++;
+                            console.warn('Send to peer failed:', pid, sendErr);
+                            // Mark peer for cleanup if sending fails
+                            if (sendErr.name === 'NetworkError' || sendErr.name === 'InvalidStateError') {
+                                console.log('Marking peer for removal:', pid);
+                                // Don't remove immediately, let onclose handler do it
+                            }
+                        }
                     } else {
-                        console.warn('Peer channel not ready:', pid, p?.channel?.readyState);
+                        // Skip closed channels silently
+                        if (p?.channel?.readyState !== 'open' && p?.channel?.readyState !== 'connecting') {
+                            // Channel is closed or closing, expected
+                        } else {
+                            console.debug('Peer channel not ready:', pid, p?.channel?.readyState);
+                        }
                     }
                 } catch (e) {
+                    failedCount++;
                     console.error('Error sending to peer', pid, ':', e);
                 }
             }
         });
         
-        if (sentCount === 0) {
-            console.warn('No peers available to broadcast message');
+        // Log broadcast result
+        if (sentCount === 0 && Object.keys(peers).length > 0) {
+            console.warn('Broadcast: No peers available (queuing may occur)');
+        } else if (failedCount > 0) {
+            console.warn(`Broadcast: Sent to ${sentCount}, failed to ${failedCount} peers`);
+        } else if (sentCount > 0) {
+            console.log(`Broadcast: Successfully sent to ${sentCount} peers`);
         }
     } catch (e) {
         console.error('Broadcast error:', e);
@@ -578,27 +623,55 @@ function broadcast(msg, excludeId = null) {
 
 function sendToPeer(id, msg) {
     try {
+        if (!id || !msg) {
+            console.warn('Invalid sendToPeer parameters');
+            return false;
+        }
+        
         const p = peers[id];
         if (!p) {
             console.warn('Peer not found:', id);
-            return;
+            return false;
         }
         
         if (!p.channel) {
             console.warn('Peer channel not initialized:', id);
-            return;
+            return false;
         }
         
-        if (p.channel.readyState !== 'open') {
-            console.warn('Peer channel not open:', id, 'State:', p.channel.readyState);
-            return;
+        const channelState = p.channel.readyState;
+        if (channelState !== 'open') {
+            console.warn('Peer channel not open:', id, 'State:', channelState);
+            
+            // If channel is closing but not closed, wait a bit
+            if (channelState === 'closing') {
+                console.log('Channel closing, will retry...');
+                setTimeout(() => {
+                    sendToPeer(id, msg); // Recursive retry
+                }, 100);
+                return false;
+            }
+            return false;
         }
         
         const msgJson = JSON.stringify(msg);
-        p.channel.send(msgJson);
-        console.log('Message sent to:', id, 'Type:', msg.type);
+        try {
+            p.channel.send(msgJson);
+            console.log('Message sent to peer:', id, 'Type:', msg.type);
+            return true;
+        } catch (sendErr) {
+            console.error('Channel send error:', id, sendErr);
+            // Handle specific errors
+            if (sendErr.name === 'InvalidStateError') {
+                console.warn('Channel invalid state, marking for cleanup');
+            } else if (sendErr.name === 'NetworkError') {
+                console.warn('Network error sending to peer');
+            }
+            return false;
+        }
     } catch (e) {
-        console.error('Error sending to peer', id, ':', e);
+        console.error('sendToPeer unexpected error:', id, e);
+        return false;
     }
 }
 
@@ -932,20 +1005,50 @@ function switchToPrivateChat(userId) {
  * Send message to active chat (routes based on type)
  */
 function sendMessage(content) {
-    if (!content || !content.trim()) return;
+    if (!content || !content.trim()) {
+        console.warn('Empty message content');
+        return;
+    }
     
-    const msg = {
-        from: state.myId,
-        fromName: state.username,
-        content: content.trim(),
-        timestamp: new Date().toISOString(),
-        type: state.activeChat.type === 'group' ? 'GROUP_MESSAGE' : 'PRIVATE_MESSAGE'
-    };
-    
-    if (state.activeChat.type === 'group') {
-        broadcastToGroup(state.activeChat.id, msg);
-    } else if (state.activeChat.type === 'private') {
-        sendToUser(state.activeChat.id, msg);
+    try {
+        // Validate state before sending
+        if (!state.myId) {
+            console.error('Cannot send message: user ID not initialized');
+            return;
+        }
+        
+        if (!state.username) {
+            console.warn('Username not set, using default');
+            state.username = 'Anonymous';
+        }
+        
+        const msg = {
+            from: state.myId,
+            fromName: state.username,
+            content: content.trim(),
+            timestamp: new Date().toISOString(),
+            type: state.activeChat?.type === 'group' ? 'GROUP_MESSAGE' : 'PRIVATE_MESSAGE'
+        };
+        
+        // Validate active chat
+        if (!state.activeChat || !state.activeChat.id) {
+            console.warn('No active chat selected');
+            renderMessage(msg); // Still display locally
+            return;
+        }
+        
+        if (state.activeChat.type === 'group') {
+            broadcastToGroup(state.activeChat.id, msg);
+        } else if (state.activeChat.type === 'private') {
+            sendToUser(state.activeChat.id, msg);
+        } else {
+            console.warn('Unknown chat type:', state.activeChat.type);
+            renderMessage(msg);
+        }
+    } catch (e) {
+        console.error('Send message error:', e);
+        // Still try to display locally
+        renderMessage({ from: state.myId, fromName: state.username, content: content.trim(), timestamp: new Date().toISOString() });
     }
 }
 
@@ -954,46 +1057,36 @@ function sendMessage(content) {
  */
 function broadcastToGroup(groupId, msg) {
     try {
-        // Store locally
-        if (!state.groups[groupId]) return;
-        state.groups[groupId].messages.push(msg);
+        // Validate group exists
+        if (!state.groups || !state.groups[groupId]) {
+            console.warn('Group not found:', groupId);
+            renderMessage(msg);
+            return;
+        }
         
-        // Encrypt if enabled
-        if (!state.securityDisabled && state.chatModes.group === 'encrypted' && window.cryptoManager) {
-            // Encrypt and send to all peers
-            Object.keys(peers).forEach(peerId => {
-                try {
-                    window.cryptoManager.encryptMessage(peerId, msg.content).then(encrypted => {
-                        const encMsg = {
-                            type: 'ENCRYPT_CHAT',
-                            from: state.myId,
-                            fromName: state.username,
-                            target: 'group',
-                            payload: encrypted,
-                            timestamp: msg.timestamp
-                        };
-                        sendToPeer(peerId, encMsg);
-                    });
-                } catch (e) {
-                    console.error('Encryption error for peer', peerId, ':', e);
-                }
-            });
-        } else {
-            // Send unencrypted
-            broadcast({
+        // Store and display locally first
+        state.groups[groupId].messages.push(msg);
+        renderMessage(msg);
+        
+        // Send to peers - simplified for real-time
+        const peerCount = Object.keys(peers).length;
+        
+        if (peerCount > 0) {
+            const broadcastMsg = {
                 type: 'GROUP_MESSAGE',
                 from: state.myId,
                 fromName: state.username,
                 target: 'group',
                 content: msg.content,
                 timestamp: msg.timestamp
-            });
+            };
+            broadcast(broadcastMsg);
         }
         
-        // Display locally
-        renderMessage(msg);
     } catch (e) {
         console.error('Broadcast error:', e);
+        renderMessage(msg);
+        renderMessage(msg);
     }
 }
 
@@ -1002,6 +1095,12 @@ function broadcastToGroup(groupId, msg) {
  */
 function sendToUser(userId, msg) {
     try {
+        // Validate inputs
+        if (!userId || !msg) {
+            console.warn('Invalid sendToUser parameters');
+            return;
+        }
+        
         // Store locally
         if (!state.privateChats[userId]) {
             state.privateChats[userId] = {
@@ -1025,7 +1124,27 @@ function sendToUser(userId, msg) {
                     payload: encrypted,
                     timestamp: msg.timestamp
                 };
-                sendToPeer(userId, encMsg);
+                
+                // Try to send, queue if fails
+                const sent = sendToPeer(userId, encMsg);
+                if (!sent && state.pendingMessages.length < RELIABILITY_CONFIG.messageQueueLimit) {
+                    console.log('Message queued for later delivery');
+                    state.pendingMessages.push({
+                        content: encMsg,
+                        peerId: userId,
+                        timestamp: Date.now()
+                    });
+                }
+            }).catch(err => {
+                console.error('Encryption failed:', err);
+                // Queue for retry even if encryption fails
+                if (state.pendingMessages.length < RELIABILITY_CONFIG.messageQueueLimit) {
+                    state.pendingMessages.push({
+                        content: msg,
+                        peerId: userId,
+                        timestamp: Date.now()
+                    });
+                }
             });
         } else {
             // Send plaintext when crypto unavailable or disabled
@@ -1037,7 +1156,15 @@ function sendToUser(userId, msg) {
                 content: msg.content,
                 timestamp: msg.timestamp
             };
-            sendToPeer(userId, plainMsg);
+            
+            const sent = sendToPeer(userId, plainMsg);
+            if (!sent && state.pendingMessages.length < RELIABILITY_CONFIG.messageQueueLimit) {
+                state.pendingMessages.push({
+                    content: plainMsg,
+                    peerId: userId,
+                    timestamp: Date.now()
+                });
+            }
         }
         
         // Display locally
@@ -1140,51 +1267,149 @@ async function initHost() {
 }
 
 let gatewayPC = null;
+let gateways = []; // Store all gateway connections for multi-peer support
+
+// --- Simple Connection Health Monitor ---
+function startHealthChecks() {
+    setInterval(() => {
+        try {
+            const openPeers = Object.keys(peers).filter(id => 
+                peers[id]?.channel?.readyState === 'open'
+            );
+            
+            const isHealthy = openPeers.length > 0;
+            state.isHealthy = isHealthy;
+            
+            // Process pending messages if peers are available
+            if (openPeers.length > 0 && state.pendingMessages?.length > 0) {
+                processPendingMessages();
+            }
+        } catch (e) {
+            console.error('Health check error:', e);
+        }
+    }, RELIABILITY_CONFIG.healthCheckIntervalMs);
+}
+
+// --- Connection State Tracking ---
+let state_lastConnectionInfo = null;
+
+function attemptReconnect() {
+    try {
+        if (!state_lastConnectionInfo) return;
+        
+        console.log('Attempting reconnection...');
+        state.connecting = true;
+        
+        // Try to rejoin with previous connection info
+        const { code } = state_lastConnectionInfo;
+        if (code) {
+            const offerInput = document.getElementById('join-offer-input');
+            if (offerInput) {
+                offerInput.value = code;
+                joinNetwork();
+            }
+        }
+    } catch (e) {
+        console.error('Reconnection attempt failed:', e);
+    }
+}
+
+/**
+ * Process pending messages when connection is restored
+ */
+function processPendingMessages() {
+    if (!state.pendingMessages || state.pendingMessages.length === 0) {
+        return;
+    }
+    
+    console.log(`Processing ${state.pendingMessages.length} pending messages`);
+    const toRetry = [...state.pendingMessages];
+    state.pendingMessages = [];
+    
+    for (const pending of toRetry) {
+        try {
+            // Check if target peer is connected
+            const peer = peers[pending.peerId];
+            if (peer && peer.connected && peer.channel && peer.channel.readyState === 'open') {
+                const sent = sendToPeer(pending.peerId, pending.content);
+                if (!sent) {
+                    // Couldn't send, re-queue
+                    state.pendingMessages.push(pending);
+                }
+            } else if (state.pendingMessages.length < RELIABILITY_CONFIG.messageQueueLimit) {
+                // Peer not available yet, keep in queue
+                state.pendingMessages.push(pending);
+            }
+        } catch (e) {
+            console.error('Error processing pending message:', e);
+            if (state.pendingMessages.length < RELIABILITY_CONFIG.messageQueueLimit) {
+                state.pendingMessages.push(pending);
+            }
+        }
+    }
+    
+    if (state.pendingMessages.length > 0) {
+        console.log(`${state.pendingMessages.length} messages still pending`);
+    }
+}
+
+// Cleanup completed gateways periodically
+setInterval(() => {
+    gateways = gateways.filter(g => {
+        if (g.connectionState === 'failed' || g.connectionState === 'closed') {
+            try { g.close(); } catch (e) {}
+            return false;
+        }
+        return true;
+    });
+}, 10000);
+
 async function generateInvite() {
     try {
-        // Clean slate
-        if (gatewayPC) {
-            gatewayPC.close();
-        }
+        // Create a NEW gateway for accepting peer connections
+        // This allows multiple peers to join simultaneously
+        const newGatewayPC = new RTCPeerConnection(buildRtcConfig());
+        const dc = newGatewayPC.createDataChannel("mesh-net", { ordered: true });
+        setupGateway(newGatewayPC, dc);
+        attachConnectionWatchers(newGatewayPC, 'host');
         
-        gatewayPC = new RTCPeerConnection(buildRtcConfig());
-        const dc = gatewayPC.createDataChannel("mesh-net", { ordered: true });
-        setupGateway(gatewayPC, dc);
-        attachConnectionWatchers(gatewayPC, 'host');
+        // Keep reference for backward compatibility, but also track in array
+        gatewayPC = newGatewayPC;
+        gateways.push(newGatewayPC);
         
         // Add ICE candidate handler
-        gatewayPC.onicecandidate = (event) => {
+        newGatewayPC.onicecandidate = (event) => {
             if (event.candidate) {
                 console.log('ICE candidate:', event.candidate.candidate);
             }
         };
         
         // Monitor connection state
-        gatewayPC.onconnectionstatechange = () => {
-            console.log('Gateway conn state:', gatewayPC.connectionState);
+        newGatewayPC.onconnectionstatechange = () => {
+            console.log('Gateway conn state:', newGatewayPC.connectionState);
             logStatus('Gateway Connection', {
-                state: gatewayPC.connectionState,
-                iceConnection: gatewayPC.iceConnectionState,
-                iceGathering: gatewayPC.iceGatheringState
+                state: newGatewayPC.connectionState,
+                iceConnection: newGatewayPC.iceConnectionState,
+                iceGathering: newGatewayPC.iceGatheringState
             });
         };
         
         // Create offer
-        const offer = await gatewayPC.createOffer({
+        const offer = await newGatewayPC.createOffer({
             offerToReceiveAudio: false,
             offerToReceiveVideo: false
         });
         
-        await gatewayPC.setLocalDescription(offer);
+        await newGatewayPC.setLocalDescription(offer);
         
         // Wait for ICE candidates
-        await waitForICEGathering(gatewayPC, 3000);
+        await waitForICEGathering(newGatewayPC, 3000);
         
-        if (!gatewayPC.localDescription) {
+        if (!newGatewayPC.localDescription) {
             throw new Error('Local description not set');
         }
         
-        const code = btoa(JSON.stringify(gatewayPC.localDescription));
+        const code = btoa(JSON.stringify(newGatewayPC.localDescription));
         const offerOutput = document.getElementById('host-offer-output');
         if (offerOutput) offerOutput.value = code;
         
@@ -2276,23 +2501,16 @@ async function sendChatMessage() {
             return;
         }
 
-        // If no open channels, queue the message and inform user
+        // Check if we have open channels
         const hasOpen = Object.keys(peers).some(pid => peers[pid]?.channel?.readyState === 'open');
-        if (!hasOpen) {
-            state.pendingMessages.push({
-                content: text,
-                chatType: state.activeChat.type,
-                chatId: state.activeChat.id
-            });
-            showNotification(state.connecting ? '⏳ Queued: will send when connected' : '⚠️ No peers yet: message queued', 'info');
-            chatElements.messageInput.value = '';
-            chatElements.messageInput.focus();
-            chatElements.messageInput.style.height = 'auto';
-            return;
-        }
-
-        // Use new unified sendMessage function
+        
+        // Always send the message (it will be displayed locally and sent to peers if available)
         sendMessage(text);
+        
+        // Inform user if message was queued due to no peers
+        if (!hasOpen) {
+            showNotification(state.connecting ? '⏳ Message queued - will send when connected' : '⚠️ No peers connected yet', 'info');
+        }
         
         // Clear input and focus for next message
         chatElements.messageInput.value = '';
@@ -2685,6 +2903,7 @@ window.switchJoinTab = switchJoinTab;
 window.switchReplyTab = switchReplyTab;
 window.processJoinInput = processJoinInput;
 window.generateShareableLink = generateShareableLink;
+window.generateInvite = generateInvite;
 window.initializeEventListeners = initializeEventListeners;
 window.refreshDiagnostics = refreshDiagnostics;
 
