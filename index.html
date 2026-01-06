@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src 'self' data:; connect-src 'self' stun:stun.l.google.com:19302 stun:stun1.l.google.com:19302;">
+        content="default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src 'self' data:; connect-src 'self' https: data: blob: stun:stun.l.google.com:19302 stun:stun1.l.google.com:19302 stun:stun2.l.google.com:19302 stun:stun3.l.google.com:19302 turn:;">
     <title>Infinity Link | Multiplex Chat</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="style.css">
@@ -172,6 +172,17 @@
                         <ion-icon name="shield-checkmark"></ion-icon>
                         <span class="btn-label">Verify Identity</span>
                     </button>
+                </div>
+            </div>
+
+            <!-- Diagnostics -->
+            <div class="diagnostics-section">
+                <h4><ion-icon name="pulse"></ion-icon> Connection Diagnostics</h4>
+                <div class="diagnostics-actions">
+                    <button class="btn-micro" onclick="refreshDiagnostics()"><ion-icon name="refresh"></ion-icon> Refresh Status</button>
+                </div>
+                <div class="diagnostics-content" id="connection-status">
+                    <!-- Populated by app.js (getConnectionStatus) -->
                 </div>
             </div>
         </aside>

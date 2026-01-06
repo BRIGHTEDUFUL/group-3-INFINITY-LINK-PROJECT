@@ -603,8 +603,41 @@ function getConnectionStatus() {
             connected: peers[id]?.channel?.readyState === 'open'
         })),
         protocol: state.protocol || 'network',
-        activeChatType: state.activeChat.type || 'group'
+        activeChatType: state.activeChat.type || 'group',
+        gatewayState: gatewayPC ? {
+            connectionState: gatewayPC.connectionState,
+            iceConnectionState: gatewayPC.iceConnectionState,
+            iceGatheringState: gatewayPC.iceGatheringState
+        } : null
     };
+}
+
+function refreshDiagnostics() {
+    try {
+        const status = getConnectionStatus();
+        logStatus('Connection Status', status);
+        const statusDiv = document.getElementById('connection-status');
+        if (statusDiv) {
+            const peersHtml = (status.peersList || []).map(p => `
+                <li><strong>${p.name || p.id}</strong> — ${p.connected ? 'open' : 'closed'}</li>
+            `).join('');
+            statusDiv.innerHTML = `
+                <div class="diag-grid">
+                    <div><strong>Role:</strong> ${status.isHost ? 'Host' : 'Guest'}</div>
+                    <div><strong>My ID:</strong> ${status.myId}</div>
+                    <div><strong>Peers:</strong> ${status.peersCount}</div>
+                    <div><strong>Active Chat:</strong> ${status.activeChatType}</div>
+                </div>
+                <div><strong>Gateway:</strong> ${status.gatewayState ? `${status.gatewayState.connectionState} / ${status.gatewayState.iceConnectionState} / ${status.gatewayState.iceGatheringState}` : 'n/a'}</div>
+                <div>
+                    <strong>Peer Channels</strong>
+                    <ul class="diag-list">${peersHtml || '<li>None</li>'}</ul>
+                </div>
+            `;
+        }
+    } catch (e) {
+        console.error('refreshDiagnostics error:', e);
+    }
 }
 
 // Derive the current page URL without any hash so shared links work on GitHub Pages subpaths
@@ -2531,6 +2564,7 @@ window.switchReplyTab = switchReplyTab;
 window.processJoinInput = processJoinInput;
 window.generateShareableLink = generateShareableLink;
 window.initializeEventListeners = initializeEventListeners;
+window.refreshDiagnostics = refreshDiagnostics;
 
 // --- LUNCH PROTOCOL FUNCTIONS ---
 
