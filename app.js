@@ -582,6 +582,7 @@ function broadcast(msg, excludeId = null) {
         const msgJson = JSON.stringify(msg);
         let sentCount = 0;
         let failedCount = 0;
+        const failedPeers = [];
         
         Object.keys(peers).forEach(pid => {
             if (pid !== excludeId) {
@@ -593,6 +594,7 @@ function broadcast(msg, excludeId = null) {
                             sentCount++;
                         } catch (sendErr) {
                             failedCount++;
+                            failedPeers.push(pid);
                             console.warn('Send to peer failed:', pid, sendErr);
                             // Mark peer for cleanup if sending fails
                             if (sendErr.name === 'NetworkError' || sendErr.name === 'InvalidStateError') {
@@ -601,19 +603,28 @@ function broadcast(msg, excludeId = null) {
                             }
                         }
                     } else {
-                        // Skip closed channels silently
-                        if (p?.channel?.readyState !== 'open' && p?.channel?.readyState !== 'connecting') {
-                            // Channel is closed or closing, expected
-                        } else {
-                            console.debug('Peer channel not ready:', pid, p?.channel?.readyState);
+                        // Channel not ready - add to retry queue if connecting
+                        if (p?.channel?.readyState === 'connecting') {
+                            console.debug('Peer channel connecting, will retry:', pid);
+                            failedPeers.push(pid);
+                            failedCount++;
                         }
                     }
                 } catch (e) {
                     failedCount++;
+                    failedPeers.push(pid);
                     console.error('Error sending to peer', pid, ':', e);
                 }
             }
         });
+        
+        // Retry failed sends with exponential backoff
+        if (failedPeers.length > 0) {
+            console.log(`Scheduling retry for ${failedPeers.length} failed peers`);
+            setTimeout(() => {
+                retryBroadcast(msg, failedPeers, 1);
+            }, 1000); // Initial retry after 1 second
+        }
         
         // Log broadcast result
         if (sentCount === 0 && Object.keys(peers).length > 0) {
@@ -625,6 +636,41 @@ function broadcast(msg, excludeId = null) {
         }
     } catch (e) {
         console.error('Broadcast error:', e);
+    }
+}
+
+function retryBroadcast(msg, peerIds, attempt) {
+    if (attempt > RELIABILITY_CONFIG.maxRetries) {
+        console.warn(`Max retries reached for broadcast to peers:`, peerIds);
+        return;
+    }
+    
+    const msgJson = JSON.stringify(msg);
+    const stillFailed = [];
+    
+    peerIds.forEach(pid => {
+        const p = peers[pid];
+        if (p && p.channel && p.channel.readyState === 'open') {
+            try {
+                p.channel.send(msgJson);
+                console.log(`Retry ${attempt} succeeded for peer:`, pid);
+            } catch (err) {
+                console.warn(`Retry ${attempt} failed for peer:`, pid, err);
+                stillFailed.push(pid);
+            }
+        } else {
+            console.debug(`Peer ${pid} still not ready on retry ${attempt}`);
+            stillFailed.push(pid);
+        }
+    });
+    
+    // Schedule next retry with exponential backoff
+    if (stillFailed.length > 0) {
+        const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s...
+        console.log(`Scheduling retry ${attempt + 1} in ${delay}ms for ${stillFailed.length} peers`);
+        setTimeout(() => {
+            retryBroadcast(msg, stillFailed, attempt + 1);
+        }, delay);
     }
 }
 
@@ -650,11 +696,20 @@ function sendToPeer(id, msg) {
         if (channelState !== 'open') {
             console.warn('Peer channel not open:', id, 'State:', channelState);
             
+            // If channel is connecting, schedule retry
+            if (channelState === 'connecting') {
+                console.log('Channel connecting, scheduling retry...');
+                setTimeout(() => {
+                    retrySendToPeer(id, msg, 1);
+                }, 500);
+                return false;
+            }
+            
             // If channel is closing but not closed, wait a bit
             if (channelState === 'closing') {
-                console.log('Channel closing, will retry...');
+                console.log('Channel closing, scheduling retry...');
                 setTimeout(() => {
-                    sendToPeer(id, msg); // Recursive retry
+                    retrySendToPeer(id, msg, 1);
                 }, 100);
                 return false;
             }
@@ -664,21 +719,57 @@ function sendToPeer(id, msg) {
         const msgJson = JSON.stringify(msg);
         try {
             p.channel.send(msgJson);
-            console.log('Message sent to peer:', id, 'Type:', msg.type);
+            console.log('✅ Message sent to peer:', id, 'Type:', msg.type);
             return true;
         } catch (sendErr) {
             console.error('Channel send error:', id, sendErr);
-            // Handle specific errors
-            if (sendErr.name === 'InvalidStateError') {
-                console.warn('Channel invalid state, marking for cleanup');
-            } else if (sendErr.name === 'NetworkError') {
-                console.warn('Network error sending to peer');
-            }
+            // Schedule retry
+            setTimeout(() => {
+                retrySendToPeer(id, msg, 1);
+            }, 1000);
             return false;
         }
     } catch (e) {
-        console.error('sendToPeer unexpected error:', id, e);
+        console.error('sendToPeer error:', e);
         return false;
+    }
+}
+
+function retrySendToPeer(id, msg, attempt) {
+    if (attempt > RELIABILITY_CONFIG.maxRetries) {
+        console.warn(`Max retries reached for peer ${id}`);
+        showNotification(`Failed to send message to ${peers[id]?.name || id}`, 'error');
+        return;
+    }
+    
+    console.log(`Retry ${attempt} sending to peer:`, id);
+    const p = peers[id];
+    
+    if (!p || !p.channel) {
+        console.warn(`Peer ${id} no longer available`);
+        return;
+    }
+    
+    if (p.channel.readyState === 'open') {
+        try {
+            const msgJson = JSON.stringify(msg);
+            p.channel.send(msgJson);
+            console.log(`✅ Retry ${attempt} succeeded for peer:`, id);
+            showNotification('Message sent', 'success');
+        } catch (err) {
+            console.error(`Retry ${attempt} failed for peer:`, id, err);
+            const delay = Math.pow(2, attempt) * 1000;
+            setTimeout(() => {
+                retrySendToPeer(id, msg, attempt + 1);
+            }, delay);
+        }
+    } else {
+        // Channel not ready yet, keep retrying with backoff
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`Channel not ready, scheduling retry ${attempt + 1} in ${delay}ms`);
+        setTimeout(() => {
+            retrySendToPeer(id, msg, attempt + 1);
+        }, delay);
     }
 }
 
@@ -771,10 +862,14 @@ function handleData(data, fromId) {
             processChatMessage(data, fromId);
         }
         else if (data.type === 'GROUP_MESSAGE') {
+            console.log('📨 Received GROUP_MESSAGE from:', fromId, 'Content:', data.content);
+            
             // Host relays to others
             if (state.isHost) {
+                console.log('🔄 Host relaying message to other peers');
                 broadcast(data, fromId);
             }
+            
             const msg = {
                 from: fromId,
                 fromName: data.fromName || 'Unknown',
@@ -782,15 +877,38 @@ function handleData(data, fromId) {
                 timestamp: data.timestamp,
                 target: 'group'
             };
-            storeMessage('group', msg);
+            
+            // Store in the general group
+            if (!state.groups['general']) {
+                console.error('General group not found, creating it');
+                state.groups['general'] = {
+                    id: 'general',
+                    name: 'General',
+                    type: 'group',
+                    members: [],
+                    messages: [],
+                    unread: 0,
+                    created: new Date(),
+                    description: 'Main group chat'
+                };
+            }
+            
+            storeMessage('general', msg);
+            console.log('✅ GROUP_MESSAGE stored and displayed');
         }
         else if (data.type === 'PRIVATE_MESSAGE') {
+            console.log('💬 Received PRIVATE_MESSAGE from:', fromId, 'Target:', data.target);
+            
             // Relay if host and not for host
             if (state.isHost && data.target && data.target !== state.myId) {
+                console.log('🔄 Host relaying private message to:', data.target);
                 sendToPeer(data.target, data);
+                return; // Don't store/display messages being relayed
             }
+            
             // If plaintext content present, store directly
             if (typeof data.content === 'string') {
+                console.log('📝 Storing plaintext private message');
                 const msg = {
                     from: fromId,
                     fromName: data.fromName || 'Unknown',
@@ -800,19 +918,34 @@ function handleData(data, fromId) {
                 };
                 const chatId = fromId;
                 storeMessage(chatId, msg);
+                console.log('✅ PRIVATE_MESSAGE stored and displayed');
             } else if (data.payload && window.cryptoManager && !state.securityDisabled) {
                 // Decrypt if payload and crypto enabled
+                console.log('🔓 Decrypting private message');
                 window.cryptoManager.decryptMessage(fromId, data.payload).then(content => {
                     const msg = {
                         from: fromId,
                         fromName: data.fromName || 'Unknown',
                         content,
                         timestamp: data.timestamp,
-                        target: data.target
+                        target: data.target,
+                        encrypted: true
                     };
                     const chatId = fromId;
                     storeMessage(chatId, msg);
-                }).catch(err => console.error('Decrypt private failed:', err));
+                    console.log('✅ Encrypted PRIVATE_MESSAGE decrypted and displayed');
+                }).catch(err => {
+                    console.error('Decrypt private failed:', err);
+                    // Still store an error message so user knows something was received
+                    const errorMsg = {
+                        from: fromId,
+                        fromName: data.fromName || 'Unknown',
+                        content: '[Unable to decrypt message]',
+                        timestamp: data.timestamp,
+                        target: data.target
+                    };
+                    storeMessage(fromId, errorMsg);
+                });
             }
         }
         else if (data.type === 'ENCRYPT_CHAT') {
@@ -920,20 +1053,38 @@ function processChatMessage(data, fromId) {
 function storeMessage(chatId, msg) {
     // Legacy function for backward compatibility
     // Route to new state structure based on type
-    if (chatId === 'group' || state.groups[chatId]) {
-        if (!state.groups[chatId]) {
-            state.groups[chatId] = {
-                id: chatId,
-                name: chatId,
+    if (chatId === 'group' || chatId === 'general' || state.groups[chatId]) {
+        // Normalize group chat ID
+        const groupId = (chatId === 'group') ? 'general' : chatId;
+        
+        if (!state.groups[groupId]) {
+            console.log('Creating new group:', groupId);
+            state.groups[groupId] = {
+                id: groupId,
+                name: groupId,
                 messages: [],
                 members: [],
                 unread: 0
             };
         }
-        state.groups[chatId].messages.push(msg);
+        
+        state.groups[groupId].messages.push(msg);
+        state.groups[groupId].lastMessage = msg;
+        
+        // If currently viewing this chat, append to DOM
+        if (state.activeChat.id === groupId || (state.activeChat.id === 'general' && groupId === 'group')) {
+            console.log('Rendering message in active group chat:', groupId);
+            renderMessage(msg);
+        } else {
+            // Mark unread and update left panel
+            console.log('Incrementing unread count for group:', groupId);
+            state.groups[groupId].unread++;
+            updateLeftPanel();
+        }
     } else {
         // Treat as private chat with user
         if (!state.privateChats[chatId]) {
+            console.log('Creating new private chat with:', chatId);
             state.privateChats[chatId] = {
                 id: chatId,
                 name: peers[chatId]?.name || chatId,
@@ -941,21 +1092,20 @@ function storeMessage(chatId, msg) {
                 unread: 0
             };
         }
+        
         state.privateChats[chatId].messages.push(msg);
         state.privateChats[chatId].lastMessage = msg;
-    }
-
-    // If currently viewing this chat, append to DOM
-    if (state.activeChat.id === chatId) {
-        renderMessage(msg);
-    } else {
-        // Mark unread
-        if (state.groups[chatId]) {
-            state.groups[chatId].unread++;
-        } else if (state.privateChats[chatId]) {
+        
+        // If currently viewing this chat, append to DOM
+        if (state.activeChat.type === 'private' && state.activeChat.id === chatId) {
+            console.log('Rendering message in active private chat:', chatId);
+            renderMessage(msg);
+        } else {
+            // Mark unread and update left panel
+            console.log('Incrementing unread count for private chat:', chatId);
             state.privateChats[chatId].unread++;
+            updateLeftPanel();
         }
-        updateLeftPanel();
     }
 }
 
@@ -1470,13 +1620,24 @@ function setupGateway(pc, dc) {
     pc.onconnectionstatechange = () => {
         console.log('Gateway connection state:', pc.connectionState);
         if (pc.connectionState === 'connected') {
-            console.log("New peer connected via gateway!");
+            console.log("✅ New peer connected via gateway!");
+            // Flush pending messages when peer connection is fully established
+            setTimeout(() => {
+                console.log('Flushing pending messages after peer connection established...');
+                flushPendingMessages();
+            }, 200);
+        } else if (pc.connectionState === 'disconnected') {
+            console.log("⚠️ Peer disconnected");
+        } else if (pc.connectionState === 'failed') {
+            console.error("❌ Peer connection failed");
         }
     };
     attachConnectionWatchers(pc, 'host');
 
     dc.onopen = () => {
         try {
+            console.log('🟢 Data channel OPENED for gateway peer');
+            
             // Peer joins - generate UUID for this peer
             peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
             
@@ -1506,16 +1667,20 @@ function setupGateway(pc, dc) {
                 }
             }, peerId);
             
-            console.log('Peer connected:', peerId);
-            // Send any queued messages now that a channel is open
-            flushPendingMessages();
+            console.log('✅ Peer connected:', peerId);
+            
+            // Flush any pending messages now that channel is open
+            console.log('Flushing pending messages after peer connection...');
+            setTimeout(() => {
+                flushPendingMessages();
+            }, 100);
         } catch (e) {
             console.error('Data channel open error:', e);
         }
     };
 
     dc.onerror = (err) => {
-        console.error('Data channel error:', err);
+        console.error('❌ Data channel ERROR:', err);
         if (peerId && peers[peerId]) {
             delete peers[peerId];
             updateUserList();
@@ -1523,7 +1688,7 @@ function setupGateway(pc, dc) {
     };
     
     dc.onclose = () => {
-        console.log('Data channel closed for peer:', peerId);
+        console.log('🔴 Data channel CLOSED for peer:', peerId);
         if (peerId && peers[peerId]) {
             delete peers[peerId];
             updateUserList();
@@ -1662,9 +1827,12 @@ async function joinNetwork() {
         };
 
         gatewayPC.ondatachannel = (e) => {
+            console.log('📡 Received data channel from host');
             const dc = e.channel;
+            
             dc.onopen = () => {
                 try {
+                    console.log('🟢 Client data channel OPENED');
                     state.connecting = false;
                     
                     // Show dashboard immediately
@@ -1685,10 +1853,13 @@ async function joinNetwork() {
                         key: window.cryptoManager ? window.cryptoManager.publicKeyJWK : null
                     }));
                     
-                    console.log('✓ Connected to network - Chat ready');
+                    console.log('✅ Connected to network - Chat ready');
                     
                     // Flush any messages queued during connecting
-                    flushPendingMessages();
+                    console.log('Flushing pending messages after connection...');
+                    setTimeout(() => {
+                        flushPendingMessages();
+                    }, 100);
                 } catch (err) {
                     console.error('Data channel open error:', err);
                 }
@@ -1718,11 +1889,11 @@ async function joinNetwork() {
             };
             
             dc.onerror = (err) => {
-                console.error("Data channel error:", err);
+                console.error('❌ Client data channel ERROR:', err);
             };
             
             dc.onclose = () => {
-                console.log("Data channel closed");
+                console.log('🔴 Client data channel CLOSED');
                 state.connecting = false;
             };
             
