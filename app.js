@@ -1031,7 +1031,7 @@ function handleData(data, fromId) {
 function processChatMessage(data, fromId) {
     // ... (Legacy unencrypted chat processing, basically same as before)
     const isPrivate = data.target !== 'group';
-    const chatId = isPrivate ? (data.from === state.myId ? data.target : data.from) : 'group';
+    const chatId = isPrivate ? (data.from === state.myId ? data.target : data.from) : 'general';
 
     // If we are Host and it's a GROUP message, broadcast it to others
     if (state.isHost && !isPrivate) {
