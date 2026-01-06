@@ -738,7 +738,9 @@ function sendToPeer(id, msg) {
 function retrySendToPeer(id, msg, attempt) {
     if (attempt > RELIABILITY_CONFIG.maxRetries) {
         console.warn(`Max retries reached for peer ${id}`);
-        showNotification(`Failed to send message to ${peers[id]?.name || id}`, 'error');
+        if (typeof showNotification === 'function') {
+            showNotification(`Failed to send message to ${peers[id]?.name || id}`, 'error');
+        }
         return;
     }
     
@@ -755,7 +757,9 @@ function retrySendToPeer(id, msg, attempt) {
             const msgJson = JSON.stringify(msg);
             p.channel.send(msgJson);
             console.log(`✅ Retry ${attempt} succeeded for peer:`, id);
-            showNotification('Message sent', 'success');
+            if (typeof showNotification === 'function') {
+                showNotification('Message sent', 'success');
+            }
         } catch (err) {
             console.error(`Retry ${attempt} failed for peer:`, id, err);
             const delay = Math.pow(2, attempt) * 1000;
