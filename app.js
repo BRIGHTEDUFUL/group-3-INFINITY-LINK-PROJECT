@@ -1422,6 +1422,16 @@ async function joinNetwork() {
             } catch (copyErr) {
                 console.warn('Auto-copy failed:', copyErr);
             }
+            // Generate a one-click answer link for the host
+            try {
+                const linkEl = document.getElementById('join-answer-link');
+                if (linkEl) {
+                    const answerLink = `${getBaseUrl()}#answer=${answerCode}`;
+                    linkEl.value = answerLink;
+                }
+            } catch (linkErr) {
+                console.warn('Answer link generation error:', linkErr);
+            }
         }
         showStep('step-join-2');
         
@@ -2253,6 +2263,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle inbound invite links from URL hash (#invite=...)
     handleInviteFromHash();
+    // Handle inbound answer links from URL hash (#answer=...)
+    handleAnswerFromHash();
 });
 
 // Helpers
@@ -2317,6 +2329,31 @@ function handleInviteFromHash() {
         try { history.replaceState(null, document.title, window.location.pathname + window.location.search); } catch {}
     } catch (e) {
         console.error('Invite hash handling failed:', e);
+    }
+}
+
+// --- Host Answer Link Handler ---
+function handleAnswerFromHash() {
+    try {
+        const hash = window.location.hash || '';
+        if (!hash.startsWith('#answer=')) return;
+
+        const answerCode = hash.replace('#answer=', '').trim();
+        if (!answerCode) return;
+
+        // Fill host input and finalize automatically
+        const hostInput = document.getElementById('host-answer-input');
+        if (hostInput) {
+            hostInput.value = answerCode;
+            showStep('step-host-2');
+            finalizeHostConnection();
+            showNotification('Applying guest reply… finalizing connection', 'info');
+        }
+
+        // Clear the hash
+        try { history.replaceState(null, document.title, window.location.pathname + window.location.search); } catch {}
+    } catch (e) {
+        console.error('Answer hash handling failed:', e);
     }
 }
 
