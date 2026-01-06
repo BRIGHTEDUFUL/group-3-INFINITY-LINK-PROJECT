@@ -8,6 +8,7 @@ const state = {
     myId: crypto.randomUUID().substring(0, 8),
     username: 'User_' + Math.floor(Math.random() * 1000),
     isHost: false,
+    connecting: false,
     
     // DUAL CHAT STATE
     groups: {
@@ -56,7 +57,12 @@ const state = {
 
 // --- WebRTC Config ---
 const RTC_CONFIG = {
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" }
+    ]
 };
 
 let peers = {}; // { id: { conn, channel, name } }
@@ -1176,6 +1182,7 @@ async function finalizeHostConnection() {
 
 async function joinNetwork() {
     try {
+        state.connecting = true;
         state.isHost = false;
         const code = document.getElementById('join-offer-input')?.value?.trim();
         if (!code) {
@@ -1214,6 +1221,7 @@ async function joinNetwork() {
             const dc = e.channel;
             dc.onopen = () => {
                 try {
+                    state.connecting = false;
                     transitionToDashboard();
                     document.getElementById('connection-panel').classList.add('hidden');
 
@@ -1259,6 +1267,7 @@ async function joinNetwork() {
             
             dc.onclose = () => {
                 console.log("Data channel closed");
+                state.connecting = false;
             };
             
             peers['HOST'] = { conn: gatewayPC, channel: dc, name: 'Host', id: 'HOST' };
@@ -1289,6 +1298,7 @@ async function joinNetwork() {
         console.log('Join network initiated successfully');
     } catch (e) {
         console.error("Join error:", e);
+        state.connecting = false;
         alert("Failed to join network: " + e.message);
     }
 }
@@ -1579,7 +1589,7 @@ function showCreateGroupModal() {
     }
 }
 
-function createGroupWithInvite() {
+async function createGroupWithInvite() {
     const nameInput = document.getElementById('group-name-input');
     const descInput = document.getElementById('group-desc-input');
     const groupName = (nameInput?.value || '').trim() || 'New Group';
@@ -1603,6 +1613,13 @@ function createGroupWithInvite() {
         updateLeftPanel();
         switchToGroup(groupId);
         
+        // Prepare a WebRTC offer for immediate joining by invitees
+        try {
+            await generateInvite();
+        } catch (e) {
+            console.warn('Invite generation failed (metadata-only invite will be used):', e);
+        }
+
         // Show invite modal
         closeInviteModal('create-group-modal');
         closeInviteModal('start-chat-modal');
@@ -1684,6 +1701,12 @@ function showInviteShareModal(chatId, chatType, chatName) {
         titleSpan.textContent = chatName;
         
         // Generate invitation data
+        // Include WebRTC host offer if available (enables auto-join)
+        const hostOfferEl = document.getElementById('host-offer-output');
+        const hostOfferCode = hostOfferEl?.value && hostOfferEl.value !== 'Generating...'
+            ? hostOfferEl.value.trim()
+            : null;
+
         const inviteData = {
             chatId: chatId,
             chatType: chatType,
@@ -1691,7 +1714,8 @@ function showInviteShareModal(chatId, chatType, chatName) {
             creatorId: state.myId,
             creatorName: state.username,
             timestamp: Date.now(),
-            version: '2.0'
+            version: '2.0',
+            networkOffer: hostOfferCode
         };
         
         // Encode invitation code
@@ -2029,7 +2053,11 @@ async function sendChatMessage() {
 
         // Validate we have a connection
         if (Object.keys(peers).length === 0 && !state.isHost) {
-            showNotification('⚠️ Not connected to network yet', 'error');
+            if (state.connecting) {
+                showNotification('⏳ Connecting… please wait', 'info');
+            } else {
+                showNotification('⚠️ Not connected to network yet', 'error');
+            }
             return;
         }
 
@@ -2119,6 +2147,17 @@ function handleInviteFromHash() {
         };
 
         showNotification(`Invite detected: ${inviteData.chatName || 'Chat'}`, 'info');
+
+        // If the invite contains a network offer, auto-populate and start joining
+        if (inviteData.networkOffer && typeof inviteData.networkOffer === 'string' && inviteData.networkOffer.length > 0) {
+            const offerInput = document.getElementById('join-offer-input');
+            if (offerInput) {
+                offerInput.value = inviteData.networkOffer.trim();
+                state.connecting = true;
+                showNotification('Connecting to host…', 'info');
+                joinNetwork();
+            }
+        }
     } catch (e) {
         console.error('Invite hash handling failed:', e);
     }
