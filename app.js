@@ -56,6 +56,7 @@ const state = {
 };
 
 // --- WebRTC Config ---
+// Base STUN servers
 const RTC_CONFIG = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
@@ -64,6 +65,71 @@ const RTC_CONFIG = {
         { urls: "stun:stun3.l.google.com:19302" }
     ]
 };
+
+// Optional TURN configuration (set your server credentials if available)
+const NETWORK_CONFIG = {
+    useTurn: false, // set to true when TURN creds are configured
+    iceTransportPolicy: 'all', // switch to 'relay' for TURN-only
+    turnServers: [
+        // Example: { urls: 'turn:your.turn.server:3478', username: 'user', credential: 'pass' }
+    ]
+};
+
+function buildRtcConfig() {
+    const cfg = {
+        iceServers: [...RTC_CONFIG.iceServers],
+        iceTransportPolicy: NETWORK_CONFIG.iceTransportPolicy
+    };
+    if (NETWORK_CONFIG.useTurn && NETWORK_CONFIG.turnServers.length > 0) {
+        cfg.iceServers = cfg.iceServers.concat(NETWORK_CONFIG.turnServers);
+    }
+    return cfg;
+}
+
+function updateSessionStatusBadge(text, status = 'active') {
+    try {
+        const badge = document.getElementById('session-status-badge');
+        if (!badge) return;
+        const dotClass = status === 'active' ? 'active' : status === 'retry' ? 'retry' : 'inactive';
+        badge.innerHTML = `<span class="status-dot ${dotClass}"></span> ${text}`;
+    } catch {}
+}
+
+function attachConnectionWatchers(pc, role = 'peer') {
+    try {
+        pc.oniceconnectionstatechange = () => {
+            const st = pc.iceConnectionState;
+            console.log(`[${role}] ICE state:`, st);
+            if (st === 'connected' || st === 'completed') {
+                updateSessionStatusBadge('Session Active', 'active');
+                state.connecting = false;
+            } else if (st === 'disconnected') {
+                updateSessionStatusBadge('Reconnecting…', 'retry');
+                // Attempt ICE restart if supported
+                if (typeof pc.restartIce === 'function') {
+                    try { pc.restartIce(); } catch (e) { console.warn('restartIce failed:', e); }
+                }
+            } else if (st === 'failed') {
+                updateSessionStatusBadge('Connection failed', 'inactive');
+            }
+        };
+        pc.onconnectionstatechange = () => {
+            const st = pc.connectionState;
+            console.log(`[${role}] Conn state:`, st);
+            if (st === 'connected') {
+                updateSessionStatusBadge('Session Active', 'active');
+                state.connecting = false;
+            } else if (st === 'connecting') {
+                updateSessionStatusBadge('Connecting…', 'retry');
+                state.connecting = true;
+            } else if (st === 'failed' || st === 'disconnected') {
+                updateSessionStatusBadge('Connection issue', 'inactive');
+            }
+        };
+    } catch (e) {
+        console.warn('attachConnectionWatchers error:', e);
+    }
+}
 
 let peers = {}; // { id: { conn, channel, name } }
 let myConnection = null; // Use manual handshake for the FIRST connection (Gateway)
@@ -962,9 +1028,10 @@ async function generateInvite() {
             gatewayPC.close();
         }
         
-        gatewayPC = new RTCPeerConnection(RTC_CONFIG);
+        gatewayPC = new RTCPeerConnection(buildRtcConfig());
         const dc = gatewayPC.createDataChannel("mesh-net", { ordered: true });
         setupGateway(gatewayPC, dc);
+        attachConnectionWatchers(gatewayPC, 'host');
         
         // Add ICE candidate handler
         gatewayPC.onicecandidate = (event) => {
@@ -1049,6 +1116,7 @@ function setupGateway(pc, dc) {
             console.log("New peer connected via gateway!");
         }
     };
+    attachConnectionWatchers(pc, 'host');
 
     dc.onopen = () => {
         try {
@@ -1204,7 +1272,8 @@ async function joinNetwork() {
             gatewayPC.close();
         }
 
-        gatewayPC = new RTCPeerConnection(RTC_CONFIG);
+        gatewayPC = new RTCPeerConnection(buildRtcConfig());
+    attachConnectionWatchers(gatewayPC, 'client');
 
         // Add ICE candidate handler
         gatewayPC.onicecandidate = (event) => {
