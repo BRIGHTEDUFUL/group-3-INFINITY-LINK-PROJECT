@@ -1,0 +1,30 @@
+# OS / editor artifacts
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*.swp
+*.swo
+
+# VS Code
+.vscode/
+.history/
+
+# Logs and temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node (not used here, but safe)
+node_modules/
+
+# Build / cache
+.cache/
+dist/

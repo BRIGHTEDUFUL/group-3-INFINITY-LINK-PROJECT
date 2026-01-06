@@ -1,4 +1,13 @@
-# Infinity Link - Production-Ready P2P Chat Application
+# Infinity Link
+
+![Status](https://img.shields.io/badge/status-production--ready-success)
+![Pages](https://img.shields.io/badge/GitHub%20Pages-enabled-blue)
+![Stack](https://img.shields.io/badge/stack-HTML%2FCSS%2FJS-orange)
+
+Peer-to-peer chat with WebRTC, end-to-end encryption, and zero servers.
+
+• Live Demo: https://BRIGHTEDUFUL.github.io/group-3-INFINITY-LINK-PROJECT/
+• Contributors: see [CONTRIBUTORS.md](CONTRIBUTORS.md)
 
 **Infinity Link** is a fully functional, real-world ready peer-to-peer chat application that requires **no server**. It uses **WebRTC** for secure, encrypted messaging between users.
 
@@ -203,7 +212,7 @@ Tested with:
 2. In GitHub, open **Settings → Pages**.
 3. Source: **Deploy from a branch** → select **main** and **/ (root)** → **Save**.
 4. Wait for the Pages action to finish (check **Actions** tab if unsure).
-5. Visit `https://<your-username>.github.io/<repo-name>/`.
+5. Visit `https://<your-username>.github.io/<repo-name>/` (example: https://BRIGHTEDUFUL.github.io/group-3-INFINITY-LINK-PROJECT/).
 
 Notes for hosted use:
 - Links generated in-app already use the current path, so invites work under the repo subpath.
