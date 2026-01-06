@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src 'self' data:; connect-src 'self' stun:stun.l.google.com:19302 stun:stun1.l.google.com:19302;">
+    <title>Infinity Link | Multiplex Chat</title>
+    <link rel="stylesheet" href="style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap"
+        rel="stylesheet">
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+</head>
+
+<body>
+    <div class="ambient-glow"></div>
+
+    <!-- DASHBOARD LAYOUT (Three-Panel Design) -->
+    <div class="dashboard hidden" id="dashboard-view">
+        <!-- LEFT PANEL: Groups & Direct Messages Sidebar -->
+        <aside class="left-panel">
+            <div class="sidebar-header">
+                <ion-icon name="planet"></ion-icon>
+                <h1>Infinity Link</h1>
+            </div>
+
+            <div class="user-profile">
+                <div class="avatar"><ion-icon name="person-circle"></ion-icon></div>
+                <div class="profile-info">
+                    <span id="my-username-display">User</span>
+                    <span class="status-dot connected"></span>
+                </div>
+                <button class="btn-profile-menu" onclick="toggleProfileMenu(event)" title="Menu">
+                    <ion-icon name="ellipsis-horizontal"></ion-icon>
+                    <span class="btn-label">Menu</span>
+                </button>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="sidebar-actions">
+                <button class="btn-primary-action" onclick="startChat()" title="Start chat">
+                    <ion-icon name="add"></ion-icon>
+                    <span>Start Chat</span>
+                </button>
+            </div>
+
+            <!-- Groups Section -->
+            <div class="nav-section">
+                <h3><ion-icon name="people-outline"></ion-icon> Groups</h3>
+                <ul class="nav-list groups-list" id="groups-list">
+                    <li class="active" data-chat-id="general" onclick="switchToGroup('general')">
+                        <ion-icon name="people"></ion-icon>
+                        <div class="chat-item-content">
+                            <span class="chat-name">General</span>
+                            <span class="chat-preview">Welcome message...</span>
+                        </div>
+                        <span class="unread-badge" style="display:none;">0</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Direct Messages Section -->
+            <div class="nav-section">
+                <h3><ion-icon name="chatbubbles-outline"></ion-icon> Direct Messages</h3>
+                <ul class="nav-list dm-list" id="dm-list">
+                    <li class="empty-state">
+                        <ion-icon name="chatbubble-outline"></ion-icon>
+                        <span>No chats yet. Click "New Chat" to start!</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Footer removed - features moved to profile menu -->
+        </aside>
+
+        <!-- CENTER PANEL: Chat Messages -->
+        <main class="center-panel">
+            <!-- Chat Header -->
+            <header class="chat-header">
+                <div class="chat-info">
+                    <div class="chat-header-content">
+                        <h2 id="chat-title-text">General</h2>
+                    </div>
+                    <span class="secure-badge"><ion-icon name="shield-checkmark"></ion-icon></span>
+                </div>
+                <div class="chat-header-actions">
+                    <button class="btn-header-primary" onclick="startChat()" title="Start chat">
+                        <ion-icon name="chatbubbles"></ion-icon>
+                        <span class="btn-label">Start Chat</span>
+                    </button>
+                    <button class="btn-header-action" id="btn-show-members" onclick="showMembersPanel()" title="Show members">
+                        <ion-icon name="people"></ion-icon>
+                        <span class="btn-label">Members</span>
+                        <span id="member-count" class="badge">0</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Messages Container -->
+            <div class="messages-container" id="messages-container">
+                <div class="message system">
+                    <ion-icon name="information-circle"></ion-icon>
+                    Welcome to Infinity Link. End-to-end encrypted messaging.
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="chat-input-area">
+                <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+                <button id="send-btn" class="btn-send" title="Send message">
+                    <ion-icon name="send"></ion-icon>
+                    <span class="btn-label">Send</span>
+                </button>
+            </div>
+        </main>
+
+        <!-- RIGHT PANEL: Chat Details & Members -->
+        <aside class="right-panel">
+            <div class="panel-header">
+                <h3 id="right-panel-title">Members</h3>
+                <button class="btn-close-panel" onclick="hideRightPanel()" title="Close panel">
+                    <ion-icon name="close"></ion-icon>
+                    <span class="btn-label">Close</span>
+                </button>
+            </div>
+
+            <!-- Members List (Group Chats) -->
+            <div class="members-section" id="members-section">
+                <div class="members-list" id="members-list">
+                    <div class="member-item">
+                        <div class="member-avatar"><ion-icon name="person-circle"></ion-icon></div>
+                        <div class="member-info">
+                            <span class="member-name">You</span>
+                            <span class="member-status">Host</span>
+                        </div>
+                        <span class="status-indicator online"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Details -->
+            <div class="chat-details">
+                <div class="detail-item">
+                    <span class="detail-label">Created</span>
+                    <span class="detail-value" id="created-date">Today</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Type</span>
+                    <span class="detail-value" id="chat-type-value">Group</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">Messages</span>
+                    <span class="detail-value" id="message-count-value">0</span>
+                </div>
+            </div>
+
+            <!-- Encryption Info -->
+            <div class="encryption-info">
+                <h4><ion-icon name="lock-closed"></ion-icon> Security</h4>
+                <div class="security-details">
+                    <p class="security-badge-text">
+                        <span class="badge-success">✓</span> End-to-End Encrypted
+                    </p>
+                    <p class="security-badge-text">
+                        <span class="badge-success">✓</span> AES-256-GCM
+                    </p>
+                    <button class="btn-verify-identity" onclick="verifyMemberIdentity()" style="display:none;">
+                        <ion-icon name="shield-checkmark"></ion-icon>
+                        <span class="btn-label">Verify Identity</span>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Mobile Sidebar Overlay/Backdrop -->
+        <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarOnMobile()"></div>
+    </div>
+
+
+    <!-- LANDING PAGE (New Entry Point) -->
+    <section class="landing-page" id="landing-page">
+        <nav class="landing-nav">
+            <div class="logo">
+                <ion-icon name="planet"></ion-icon> Infinity Link
+            </div>
+            <a href="https://github.com" target="_blank" class="github-link"><ion-icon name="logo-github"></ion-icon>
+                GitHub</a>
+        </nav>
+
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="pulse-dot"></span> v2.0 Infinity Mesh
+            </div>
+            <h1 class="hero-title">
+                Chat Beyond <br>
+                <span class="text-gradient">Centralization.</span>
+            </h1>
+            <p class="hero-subtitle">
+                The world's first serverless, zero-trace communication protocol.
+                Built on WebRTC for absolute privacy and infinite scalability.
+            </p>
+
+            <div class="cta-group">
+                <button class="btn-primary" onclick="enterApp()">
+                    Launch Protocol <ion-icon name="arrow-forward"></ion-icon>
+                </button>
+            </div>
+
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <span class="stat-val">0</span>
+                    <span class="stat-label">Servers</span>
+                </div>
+                <div class="divider-v"></div>
+                <div class="stat-item">
+                    <span class="stat-val">AES</span>
+                    <span class="stat-label">Encryption</span>
+                </div>
+                <div class="divider-v"></div>
+                <div class="stat-item">
+                    <span class="stat-val">P2P</span>
+                    <span class="stat-label">Direct Link</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- USER SETUP SCREEN (Modern Onboarding) -->
+    <section class="user-setup-screen hidden" id="user-setup-screen">
+        <div class="setup-container">
+            <!-- Setup Header -->
+            <div class="setup-header">
+                <div class="setup-logo">
+                    <ion-icon name="planet"></ion-icon>
+                </div>
+                <h1>Welcome to Infinity Link</h1>
+                <p class="setup-subtitle">Set up your profile to get started</p>
+            </div>
+
+            <!-- Setup Form -->
+            <div class="setup-form">
+                <div class="form-group">
+                    <label for="setup-username" class="form-label">
+                        <ion-icon name="person"></ion-icon> Display Name
+                    </label>
+                    <input 
+                        type="text" 
+                        id="setup-username" 
+                        class="form-input" 
+                        placeholder="Enter your name or alias"
+                        maxlength="30"
+                        autocomplete="off"
+                    >
+                    <span class="form-hint">This is how others will see you</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="setup-id" class="form-label">
+                        <ion-icon name="key"></ion-icon> Your ID (Optional)
+                    </label>
+                    <div class="id-container">
+                        <input 
+                            type="text" 
+                            id="setup-id" 
+                            class="form-input" 
+                            placeholder="Auto-generated or enter your own"
+                            maxlength="15"
+                            autocomplete="off"
+                            readonly
+                        >
+                        <button class="btn-regenerate-id" onclick="regenerateId()" title="Generate new ID">
+                            <ion-icon name="refresh"></ion-icon>
+                        </button>
+                    </div>
+                    <span class="form-hint">Used for WebRTC connections (auto-generated)</span>
+                </div>
+
+                <div class="setup-features">
+                    <div class="feature-item">
+                        <ion-icon name="lock-closed" class="feature-icon"></ion-icon>
+                        <div>
+                            <h4>End-to-End Encrypted</h4>
+                            <p>AES-256-GCM encryption by default</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <ion-icon name="globe" class="feature-icon"></ion-icon>
+                        <div>
+                            <h4>P2P Direct</h4>
+                            <p>No servers, no data collection</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <ion-icon name="flash" class="feature-icon"></ion-icon>
+                        <div>
+                            <h4>Instant Messaging</h4>
+                            <p>Real-time WebRTC communication</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Setup Actions -->
+            <div class="setup-actions">
+                <button class="btn-setup-continue" onclick="completeUserSetup()">
+                    Continue <ion-icon name="arrow-forward"></ion-icon>
+                </button>
+                <button class="btn-setup-skip" onclick="showLanding()">
+                    <ion-icon name="home"></ion-icon> Back to Home
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- CONNECTION OVERLAY (Hidden by default now) -->
+    <div class="connection-panel hidden" id="connection-panel">
+        <header class="overlay-header">
+            <button class="btn-back" onclick="showLanding()">
+                <ion-icon name="arrow-back"></ion-icon> Back
+            </button>
+            <div class="logo-large">
+                <ion-icon name="planet"></ion-icon> Infinity Link
+            </div>
+            <p>Initialize Secure Session</p>
+        </header>
+
+        <!-- Step 0: Welcome -->
+        <div class="card step-container active" id="step-welcome">
+            <h2>Select Mode</h2>
+            <div class="mode-selection">
+                <button class="btn-mode" onclick="selectProtocol('group')">
+                    <ion-icon name="flash"></ion-icon>
+                    <div>
+                        <h3>Launch Protocol</h3>
+                        <p>Create a secure chat session.</p>
+                    </div>
+                </button>
+                <div class="divider">OR</div>
+                <button class="btn-mode secondary" onclick="startHost()">
+                    <ion-icon name="server-outline"></ion-icon>
+                    <div>
+                        <h3>Host a Room</h3>
+                        <p>Traditional mesh network mode.</p>
+                    </div>
+                </button>
+                <div class="divider">OR</div>
+                <button class="btn-mode secondary" onclick="window.location.hash='#join'; showStep('step-join-1')">
+                    <ion-icon name="enter-outline"></ion-icon>
+                    <div>
+                        <h3>Join a Room</h3>
+                        <p>Enter a code or link from a friend.</p>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- LUNCH PROTOCOL: Step 0 - Select Protocol Type -->
+        <div class="card step-container" id="step-protocol-select">
+            <h2><ion-icon name="flash"></ion-icon> Lunch Protocol</h2>
+            <p>Choose how you want to communicate:</p>
+            <div class="protocol-selection">
+                <button class="btn-protocol" onclick="selectProtocol('private')">
+                    <ion-icon name="person"></ion-icon>
+                    <div>
+                        <h3>Private Chat</h3>
+                        <p>One-on-one secure conversation</p>
+                    </div>
+                </button>
+                <button class="btn-protocol" onclick="selectProtocol('group')">
+                    <ion-icon name="people"></ion-icon>
+                    <div>
+                        <h3>Group Chat</h3>
+                        <p>Multi-person secure group</p>
+                    </div>
+                </button>
+            </div>
+            <button class="btn-text" onclick="showStep('step-welcome')"><ion-icon name="arrow-back"></ion-icon> Back</button>
+        </div>
+
+        <!-- LUNCH PROTOCOL: Step 1 - Create Private/Group Chat -->
+        <div class="card step-container" id="step-protocol-create">
+            <h2><ion-icon name="create"></ion-icon> Create Session</h2>
+            <p id="protocol-create-subtitle">Setting up your secure session...</p>
+            
+            <div class="protocol-info-card">
+                <div class="protocol-badge" id="protocol-badge-type">PRIVATE</div>
+                <p id="protocol-description">Direct 1-to-1 encrypted channel</p>
+            </div>
+
+            <div id="protocol-loading" class="spinner"></div>
+            
+            <button class="btn-secondary full-width" id="btn-protocol-next" onclick="showStep('step-protocol-invite')" style="display:none;">
+                <ion-icon name="people"></ion-icon> Next: Invite Others <ion-icon name="arrow-forward"></ion-icon>
+            </button>
+            <button class="btn-text" onclick="showStep('step-protocol-select')"><ion-icon name="arrow-back"></ion-icon> Back</button>
+        </div>
+
+        <!-- LUNCH PROTOCOL: Step 2 - Invitation & Sharing -->
+        <div class="card step-container" id="step-protocol-invite">
+            <h2><ion-icon name="share-social"></ion-icon> Share Invitation</h2>
+            <p>Share your session link or code with others:</p>
+
+            <div class="protocol-tabs">
+                <button class="tab-btn active" data-tab="link" onclick="switchProtocolTab('link')">
+                    <ion-icon name="link"></ion-icon> Share Link
+                </button>
+            </div>
+
+            <!-- Link Tab -->
+            <div class="tab-content active" id="protocol-tab-link">
+                <div class="code-box">
+                    <input type="text" id="protocol-link-output" readonly placeholder="Share this link..." class="link-input">
+                    <button class="btn-copy" onclick="copyToClipboard('protocol-link-output', this)">
+                        <ion-icon name="copy"></ion-icon> Copy Link
+                    </button>
+                </div>
+                <p class="hint-text"><ion-icon name="information-circle"></ion-icon> Perfect for quick sharing</p>
+            </div>
+
+
+
+            <div class="invitation-stats">
+                <span id="invitation-count-badge">Ready to invite</span>
+                <span id="session-status-badge" class="status-badge"><span class="status-dot active"></span> Active</span>
+            </div>
+
+            <button class="btn-secondary full-width" onclick="startProtocolSession()">
+                <ion-icon name="play"></ion-icon> Start Session
+            </button>
+            <button class="btn-text" onclick="showStep('step-protocol-create')"><ion-icon name="arrow-back"></ion-icon> Back</button>
+        </div>
+
+        <!-- LUNCH PROTOCOL: Step 3 - Join Existing Session -->
+        <div class="card step-container" id="step-protocol-join">
+            <h2><ion-icon name="enter"></ion-icon> Join Session</h2>
+            <p>Paste the invitation link from your host:</p>
+
+            <div class="protocol-tabs solo">
+                <button class="tab-btn active" data-tab="link">
+                    <ion-icon name="link"></ion-icon> Link
+                </button>
+            </div>
+
+            <div class="tab-content active" id="protocol-join-tab-link">
+                <input type="text" id="protocol-join-link-input" placeholder="Paste invitation link..." class="link-input">
+            </div>
+
+            <button class="btn full-width" onclick="joinProtocolSession()"><ion-icon name="log-in"></ion-icon> Join Session</button>
+            <button class="btn-text" onclick="showStep('step-welcome')"><ion-icon name="close"></ion-icon> Cancel</button>
+        </div>
+
+        <!-- HOST: Step 1 -->
+        <div class="card step-container" id="step-host-1">
+            <h2><ion-icon name="link"></ion-icon> Invite Peers</h2>
+            <p>Share this secure link with anyone you want to join.</p>
+
+            <input type="hidden" id="host-offer-output" value="Generating...">
+
+            <div class="code-box single">
+                <input type="text" id="host-link-output" readonly placeholder="Link will appear here..." class="link-input">
+                <button class="btn-copy" onclick="copyToClipboard('host-link-output', this)">
+                    <ion-icon name="copy"></ion-icon> Copy Link
+                </button>
+            </div>
+            <p class="hint-text"><ion-icon name="information-circle"></ion-icon> Send this link over chat, email, or SMS</p>
+
+
+
+            <div id="host-loading" class="spinner"></div>
+
+            <button class="btn-secondary full-width" onclick="showStep('step-host-2')">
+                <ion-icon name="arrow-forward-circle"></ion-icon> Next: I sent it
+            </button>
+        </div>
+
+        <!-- HOST: Step 2 -->
+        <div class="card step-container" id="step-host-2">
+            <h2><ion-icon name="pulse"></ion-icon> Accept Peer</h2>
+            <p>Paste the reply code from your friend to let them in.</p>
+            <textarea id="host-answer-input" placeholder="Paste reply code here..."></textarea>
+            <button class="btn full-width" onclick="finalizeConnection()"><ion-icon name="checkmark-circle"></ion-icon> Accept Connection</button>
+            <button class="btn-text" onclick="showStep('step-host-1')"><ion-icon name="arrow-back"></ion-icon> Back</button>
+        </div>
+
+        <!-- JOIN: Step 1 -->
+        <div class="card step-container" id="step-join-1">
+            <h2><ion-icon name="key"></ion-icon> Join Network</h2>
+            <p>Paste the invitation link from your host.</p>
+            
+            <input type="hidden" id="join-offer-input">
+            <div class="tab-content active" id="join-tab-link">
+                <input type="text" id="join-link-input" placeholder="Paste invite link here..." class="link-input">
+            </div>
+
+            <button class="btn full-width" onclick="processJoinInput()"><ion-icon name="enter"></ion-icon> Join Room</button>
+            <button class="btn-text" onclick="showStep('step-welcome')"><ion-icon name="close"></ion-icon> Cancel</button>
+        </div>
+
+        <!-- JOIN: Step 2 -->
+        <div class="card step-container" id="step-join-2">
+            <h2><ion-icon name="paper-plane"></ion-icon> Reply to Host</h2>
+            <p>Send this reply code back to the host to finish connecting.</p>
+            
+            <div class="reply-tabs">
+                <button class="tab-btn active" data-tab="code" onclick="switchReplyTab('code')"><ion-icon name="code-slash"></ion-icon> Code</button>
+            </div>
+
+            <!-- Code Tab -->
+            <div class="tab-content active" id="reply-tab-code">
+                <div class="code-box">
+                    <textarea id="join-answer-output" readonly></textarea>
+                    <button class="btn-copy" onclick="copyToClipboard('join-answer-output', this)">
+                        <ion-icon name="copy"></ion-icon> Copy
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- INVITE MODALS -->
+    
+    <!-- Create Group Modal with Invite -->
+    <div class="modal-overlay hidden" id="create-group-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2><ion-icon name="people"></ion-icon> Create New Group</h2>
+                <button class="modal-close" onclick="closeInviteModal('create-group-modal')" title="Close">
+                    <ion-icon name="close"></ion-icon>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Group Name</label>
+                    <input type="text" id="group-name-input" placeholder="e.g., Project Team, Friends..." maxlength="50">
+                </div>
+                <div class="form-group">
+                    <label>Description (Optional)</label>
+                    <textarea id="group-desc-input" placeholder="What's this group about?" maxlength="200"></textarea>
+                </div>
+                <button class="btn-primary full-width" onclick="createGroupWithInvite()">
+                    <ion-icon name="checkmark-circle"></ion-icon> Create Group
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invite Share Modal -->
+    <div class="modal-overlay hidden" id="invite-share-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2><ion-icon name="share-social"></ion-icon> Invite People to <span id="invite-chat-name">Chat</span></h2>
+                <button class="modal-close" onclick="closeInviteModal('invite-share-modal')" title="Close">
+                    <ion-icon name="close"></ion-icon>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Tabs for different sharing methods -->
+                <div class="invite-tabs">
+                    <button class="tab-btn active" data-tab="link">
+                        <ion-icon name="link"></ion-icon> Link
+                    </button>
+                </div>
+
+                <!-- Link Tab -->
+                <div class="invite-tab-content active" id="invite-tab-link">
+                    <div class="copy-container">
+                        <input type="text" id="invite-link-input" class="copy-input" readonly>
+                        <button class="btn-copy-primary" onclick="copyInviteLink()">
+                            <ion-icon name="copy"></ion-icon> Copy Link
+                        </button>
+                    </div>
+                    <p class="hint-text">Share this link in email, messaging apps, or social media</p>
+                    <button class="btn-secondary full-width" onclick="shareInviteLink()">
+                        <ion-icon name="share-outline"></ion-icon> Share
+                    </button>
+                </div>
+
+                <div class="modal-footer">
+                    <p class="info-text">
+                        <ion-icon name="shield-checkmark"></ion-icon> 
+                        All invites are encrypted. Only people with the invite can join.
+                    </p>
+                    <button class="btn-primary full-width" onclick="closeInviteModal('invite-share-modal')">
+                        <ion-icon name="checkmark"></ion-icon> Done
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start Private Chat with Invite Modal -->
+    <div class="modal-overlay hidden" id="start-chat-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2><ion-icon name="chatbubble"></ion-icon> Start Chat</h2>
+                <button class="modal-close" onclick="closeInviteModal('start-chat-modal')" title="Close">
+                    <ion-icon name="close"></ion-icon>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Option 1: Invite someone new -->
+                <div class="section-divider">
+                    <span class="divider-text">Create New Chat</span>
+                </div>
+                <button class="btn-secondary full-width modal-action-btn" onclick="startPrivateChatWithInvite()">
+                    <ion-icon name="key"></ion-icon> Private Chat Invite
+                </button>
+                <button class="btn-secondary full-width modal-action-btn" onclick="showCreateGroupModal()">
+                    <ion-icon name="people"></ion-icon> Group Chat
+                </button>
+                <p class="hint-text">Start a private chat or create a new group session</p>
+
+                <!-- Option 2: Chat with connected peer -->
+                <div class="section-divider">
+                    <span class="divider-text">Chat With Connected Users</span>
+                </div>
+                <div class="peer-list-container">
+                    <ul class="peer-list" id="available-peers">
+                        <li class="empty-state">No other users connected yet</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contributors Section (Home) -->
+    <section class="ack-section" id="contributors">
+        <div class="ack-card">
+            <h2><ion-icon name="people"></ion-icon> Group C Contributors</h2>
+            <p class="ack-subtitle">Core team members</p>
+            <ul class="ack-list">
+                <li><span class="ack-name">LLOYD NANA KWESI SIAW</span><span class="ack-id">1704281585</span></li>
+                <li><span class="ack-name">GORDON KPENGYIR</span><span class="ack-id">1703719926</span></li>
+                <li><span class="ack-name">YIGAL ADJEI</span><span class="ack-id">1704286333</span></li>
+                <li><span class="ack-name">EBENEZER AKOOTEY ANNAN</span><span class="ack-id">1703688172</span></li>
+                <li><span class="ack-name">Oscar Whajah</span><span class="ack-id">1703250979</span></li>
+                <li><span class="ack-name">Abdul Mumin Dawuni Saani</span><span class="ack-id">1704883265</span></li>
+                <li><span class="ack-name">MICHAEL TETTEH KWAO</span><span class="ack-id">1703162579</span></li>
+                <li><span class="ack-name">OKYERE EMMANUEL</span><span class="ack-id">1703235727</span></li>
+                <li><span class="ack-name">ABDUL JALIL HAKIM</span><span class="ack-id">1703079348</span></li>
+                <li><span class="ack-name">AFOSAH KELVIN</span><span class="ack-id">1705353629</span></li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Acknowledgments / About -->
+    <section class="ack-section" id="acknowledgments">
+        <div class="ack-card">
+            <h2><ion-icon name="people-circle"></ion-icon> Acknowledgments</h2>
+            <p class="ack-subtitle">Group 3 Contributors</p>
+            <ul class="ack-list">
+                <li><span class="ack-name">LLOYD NANA KWESI SIAW</span><span class="ack-id">1704281585</span></li>
+                <li><span class="ack-name">GORDON KPENGYIR</span><span class="ack-id">1703719926</span></li>
+                <li><span class="ack-name">YIGAL ADJEI</span><span class="ack-id">1704286333</span></li>
+                <li><span class="ack-name">EBENEZER AKOOTEY ANNAN</span><span class="ack-id">1703688172</span></li>
+                <li><span class="ack-name">Oscar Whajah</span><span class="ack-id">1703250979</span></li>
+                <li><span class="ack-name">Abdul Mumin Dawuni Saani</span><span class="ack-id">1704883265</span></li>
+                <li><span class="ack-name">MICHAEL TETTEH KWAO</span><span class="ack-id">1703162579</span></li>
+                <li><span class="ack-name">OKYERE EMMANUEL</span><span class="ack-id">1703235727</span></li>
+                <li><span class="ack-name">ABDUL JALIL HAKIM</span><span class="ack-id">1703079348</span></li>
+                <li><span class="ack-name">AFOSAH KELVIN</span><span class="ack-id">1705353629</span></li>
+            </ul>
+        </div>
+    </section>
+
+    <script src="crypto.js"></script>
+    <script src="identity.js"></script>
+    <script src="security-ui.js"></script>
+    <script src="app.js"></script>
+    
+    <script>
+    // Dropdown Menu Functions
+    let activeDropdown = null;
+
+    function toggleProfileMenu(event) {
+        event.stopPropagation();
+        const menu = document.getElementById('profile-dropdown');
+        
+        if (!menu) {
+            // Create the dropdown menu
+            const dropdown = document.createElement('div');
+            dropdown.id = 'profile-dropdown';
+            dropdown.className = 'dropdown-menu';
+            dropdown.innerHTML = `
+                <div class="dropdown-menu-item" onclick="showCreateGroupModal(); closeDropdowns();">
+                    <ion-icon name="people"></ion-icon>
+                    <span>New Group</span>
+                </div>
+                <div class="dropdown-menu-item" onclick="showSecurityDashboard(); closeDropdowns();">
+                    <ion-icon name="shield-checkmark"></ion-icon>
+                    <span>Security</span>
+                </div>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-menu-item danger" onclick="location.reload();">
+                    <ion-icon name="power"></ion-icon>
+                    <span>Leave Session</span>
+                </div>
+            `;
+            
+            const userProfile = event.currentTarget.closest('.user-profile');
+            userProfile.appendChild(dropdown);
+            
+            setTimeout(() => dropdown.classList.add('show'), 10);
+            activeDropdown = dropdown;
+        } else {
+            closeDropdowns();
+        }
+    }
+
+    function toggleChatMenu(event) {
+        event.stopPropagation();
+        const menu = document.getElementById('chat-dropdown');
+        
+        if (!menu) {
+            const dropdown = document.createElement('div');
+            dropdown.id = 'chat-dropdown';
+            dropdown.className = 'dropdown-menu';
+            dropdown.innerHTML = `
+                <div class="dropdown-menu-item" onclick="showChatSettings(); closeDropdowns();">
+                    <ion-icon name="settings"></ion-icon>
+                    <span>Chat Settings</span>
+                </div>
+                <div class="dropdown-menu-item" onclick="toggleRightPanel(); closeDropdowns();">
+                    <ion-icon name="information-circle"></ion-icon>
+                    <span>Chat Info</span>
+                </div>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-menu-item" onclick="exportChatHistory(); closeDropdowns();">
+                    <ion-icon name="download"></ion-icon>
+                    <span>Export History</span>
+                </div>
+            `;
+            
+            const headerActions = document.querySelector('.chat-header-actions');
+            headerActions.appendChild(dropdown);
+            
+            setTimeout(() => dropdown.classList.add('show'), 10);
+            activeDropdown = dropdown;
+        } else {
+            closeDropdowns();
+        }
+    }
+
+    function closeDropdowns() {
+        if (activeDropdown) {
+            activeDropdown.classList.remove('show');
+            setTimeout(() => {
+                if (activeDropdown && activeDropdown.parentNode) {
+                    activeDropdown.parentNode.removeChild(activeDropdown);
+                }
+                activeDropdown = null;
+            }, 200);
+        }
+    }
+
+    function exportChatHistory() {
+        const activeChat = state.activeChat;
+        const chatData = activeChat.type === 'group' 
+            ? state.groups[activeChat.id] 
+            : state.privateChats[activeChat.id];
+        
+        if (!chatData || !chatData.messages) {
+            showNotification('No messages to export', 'info');
+            return;
+        }
+        
+        const exportData = {
+            chatName: chatData.name,
+            chatType: activeChat.type,
+            exportDate: new Date().toISOString(),
+            messages: chatData.messages.map(msg => ({
+                sender: msg.senderName || msg.senderId,
+                text: msg.text,
+                timestamp: msg.timestamp
+            }))
+        };
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${chatData.name.replace(/\\s+/g, '_')}_chat_export.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        showNotification('Chat history exported successfully', 'success');
+    }
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', closeDropdowns);
+    
+    // Make functions globally available
+    window.toggleProfileMenu = toggleProfileMenu;
+    window.toggleChatMenu = toggleChatMenu;
+    window.closeDropdowns = closeDropdowns;
+    window.exportChatHistory = exportChatHistory;
+    </script>
+</body>
+
+</html>
