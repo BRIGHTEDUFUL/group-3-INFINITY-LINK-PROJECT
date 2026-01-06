@@ -292,6 +292,21 @@ window.onload = async () => {
     try {
         console.log('Application starting...');
 
+        // Silence non-error notifications for a cleaner, real-time-first experience
+        try {
+            if (typeof window.showNotification === 'function') {
+                const _origNotify = window.showNotification;
+                window.showNotification = (message, type = 'info') => {
+                    if (type === 'error') {
+                        _origNotify(message, type);
+                    } else {
+                        // No-op for info/success to keep UI silent
+                        console.log('[notify]', type, message);
+                    }
+                };
+            }
+        } catch {}
+
         // Ensure we are running in a secure context (required for WebRTC and clipboard APIs)
         if (!window.isSecureContext && location.protocol !== 'http:' && location.hostname !== 'localhost') {
             showNotification('⚠️ Please use HTTPS (GitHub Pages) for multi-device chats to work', 'error');
