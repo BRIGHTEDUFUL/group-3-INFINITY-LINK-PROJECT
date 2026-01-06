@@ -10,6 +10,7 @@ const state = {
     isHost: false,
     connecting: false,
     pendingMessages: [],
+    securityDisabled: true,
     
     // DUAL CHAT STATE
     groups: {
@@ -659,6 +660,51 @@ function handleData(data, fromId) {
         if (data.type === 'CHAT') {
             processChatMessage(data, fromId);
         }
+        else if (data.type === 'GROUP_MESSAGE') {
+            // Host relays to others
+            if (state.isHost) {
+                broadcast(data, fromId);
+            }
+            const msg = {
+                from: fromId,
+                fromName: data.fromName || 'Unknown',
+                content: data.content,
+                timestamp: data.timestamp,
+                target: 'group'
+            };
+            storeMessage('group', msg);
+        }
+        else if (data.type === 'PRIVATE_MESSAGE') {
+            // Relay if host and not for host
+            if (state.isHost && data.target && data.target !== state.myId) {
+                sendToPeer(data.target, data);
+            }
+            // If plaintext content present, store directly
+            if (typeof data.content === 'string') {
+                const msg = {
+                    from: fromId,
+                    fromName: data.fromName || 'Unknown',
+                    content: data.content,
+                    timestamp: data.timestamp,
+                    target: data.target
+                };
+                const chatId = fromId;
+                storeMessage(chatId, msg);
+            } else if (data.payload && window.cryptoManager && !state.securityDisabled) {
+                // Decrypt if payload and crypto enabled
+                window.cryptoManager.decryptMessage(fromId, data.payload).then(content => {
+                    const msg = {
+                        from: fromId,
+                        fromName: data.fromName || 'Unknown',
+                        content,
+                        timestamp: data.timestamp,
+                        target: data.target
+                    };
+                    const chatId = fromId;
+                    storeMessage(chatId, msg);
+                }).catch(err => console.error('Decrypt private failed:', err));
+            }
+        }
         else if (data.type === 'ENCRYPT_CHAT') {
             const chatId = data.target !== 'group' ? (data.from === state.myId ? data.target : data.from) : 'group';
 
@@ -882,8 +928,8 @@ function broadcastToGroup(groupId, msg) {
         if (!state.groups[groupId]) return;
         state.groups[groupId].messages.push(msg);
         
-        // Encrypt if needed
-        if (state.chatModes.group === 'encrypted' && window.cryptoManager) {
+        // Encrypt if enabled
+        if (!state.securityDisabled && state.chatModes.group === 'encrypted' && window.cryptoManager) {
             // Encrypt and send to all peers
             Object.keys(peers).forEach(peerId => {
                 try {
@@ -938,8 +984,8 @@ function sendToUser(userId, msg) {
         state.privateChats[userId].messages.push(msg);
         state.privateChats[userId].lastMessage = msg;
         
-        // Always encrypt private messages
-        if (window.cryptoManager) {
+        // Encrypt unless disabled
+        if (!state.securityDisabled && window.cryptoManager) {
             window.cryptoManager.encryptMessage(userId, msg.content).then(encrypted => {
                 const encMsg = {
                     type: 'PRIVATE_MESSAGE',
@@ -952,7 +998,16 @@ function sendToUser(userId, msg) {
                 sendToPeer(userId, encMsg);
             });
         } else {
-            console.warn('Crypto manager not available for encryption');
+            // Send plaintext when crypto unavailable or disabled
+            const plainMsg = {
+                type: 'PRIVATE_MESSAGE',
+                from: state.myId,
+                fromName: state.username,
+                target: userId,
+                content: msg.content,
+                timestamp: msg.timestamp
+            };
+            sendToPeer(userId, plainMsg);
         }
         
         // Display locally
