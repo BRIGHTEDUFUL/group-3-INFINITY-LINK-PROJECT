@@ -376,11 +376,18 @@ window.onload = async () => {
             if (codeInput) {
                 codeInput.value = code;
             }
+            
+            // Auto-generate username if not set
+            if (!state.username || state.username.startsWith('User_')) {
+                state.username = 'Guest_' + Math.floor(Math.random() * 10000);
+            }
+            
+            // Hide all setup screens - go directly to join
             document.getElementById('step-welcome')?.classList.remove('active');
-            showStep('step-join-1');
+            document.getElementById('connection-panel')?.classList.remove('hidden');
             
             // Auto-join without user clicking button
-            console.log('✓ Network invitation link detected - Starting auto-join...');
+            console.log('✓ Network invitation link detected - Auto-joining...');
             state.connecting = true;
             setTimeout(() => {
                 try {
@@ -389,7 +396,7 @@ window.onload = async () => {
                     console.error('Auto-join failed:', e);
                     showNotification('Auto-join failed. Please click "Join Room" manually.', 'error');
                 }
-            }, 500);
+            }, 300);
         }
         
         console.log('✓ Initialization complete');
@@ -972,6 +979,12 @@ function switchToGroup(groupId) {
     console.log('Switched to group:', groupId);
     updateChatDisplay();
     updateLeftPanel();
+    
+    // Focus message input for immediate typing
+    const messageInput = document.getElementById('message-input');
+    if (messageInput) {
+        setTimeout(() => messageInput.focus(), 100);
+    }
 }
 
 /**
@@ -1086,7 +1099,6 @@ function broadcastToGroup(groupId, msg) {
     } catch (e) {
         console.error('Broadcast error:', e);
         renderMessage(msg);
-        renderMessage(msg);
     }
 }
 
@@ -1112,6 +1124,9 @@ function sendToUser(userId, msg) {
         }
         state.privateChats[userId].messages.push(msg);
         state.privateChats[userId].lastMessage = msg;
+        
+        // Display locally immediately
+        renderMessage(msg);
         
         // Encrypt unless disabled
         if (!state.securityDisabled && window.cryptoManager) {
@@ -1167,8 +1182,6 @@ function sendToUser(userId, msg) {
             }
         }
         
-        // Display locally
-        renderMessage(msg);
     } catch (e) {
         console.error('Send to user error:', e);
     }
@@ -1653,8 +1666,17 @@ async function joinNetwork() {
             dc.onopen = () => {
                 try {
                     state.connecting = false;
+                    
+                    // Show dashboard immediately
                     transitionToDashboard();
-                    document.getElementById('connection-panel').classList.add('hidden');
+                    
+                    // Hide connection panel
+                    document.getElementById('connection-panel')?.classList.add('hidden');
+                    
+                    // Switch to general group chat
+                    switchToGroup('general');
+                    updateUserList();
+                    updateChatDisplay();
 
                     // SEND HI with PUBLIC KEY
                     dc.send(JSON.stringify({
@@ -1663,7 +1685,8 @@ async function joinNetwork() {
                         key: window.cryptoManager ? window.cryptoManager.publicKeyJWK : null
                     }));
                     
-                    console.log('Data channel opened, sent HI');
+                    console.log('✓ Connected to network - Chat ready');
+                    
                     // Flush any messages queued during connecting
                     flushPendingMessages();
                 } catch (err) {
@@ -1757,12 +1780,32 @@ async function joinNetwork() {
 // --- UI Functions ---
 
 function transitionToDashboard() {
-    views.dashboard.classList.remove('hidden');
-    // Hide initial inputs? handled by status logic
-    document.getElementById('my-username-display').textContent = state.username;
-    
-    // Update protocol indicator
-    updateProtocolDisplay();
+    try {
+        // Hide all connection panels and setup screens
+        document.getElementById('connection-panel')?.classList.add('hidden');
+        document.getElementById('step-welcome')?.classList.remove('active');
+        document.getElementById('step-join-1')?.classList.remove('active');
+        document.getElementById('step-join-2')?.classList.remove('active');
+        document.getElementById('step-host-1')?.classList.remove('active');
+        document.getElementById('step-host-2')?.classList.remove('active');
+        
+        // Show dashboard
+        views.dashboard.classList.remove('hidden');
+        document.getElementById('my-username-display').textContent = state.username;
+        
+        // Update protocol indicator
+        updateProtocolDisplay();
+        
+        // Ensure chat area is visible and ready
+        const messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        console.log('✓ Dashboard ready - Chat active');
+    } catch (e) {
+        console.error('Dashboard transition error:', e);
+    }
 }
 
 function updateProtocolDisplay() {
