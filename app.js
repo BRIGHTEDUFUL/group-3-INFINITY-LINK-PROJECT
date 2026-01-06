@@ -905,7 +905,7 @@ function handleData(data, fromId) {
             
             // Relay if host and not for host
             if (state.isHost && data.target && data.target !== state.myId) {
-                console.log('🔄 Host relaying private message to:', data.target);
+                console.log('🔄 Host relaying private message from', fromId, 'to:', data.target);
                 sendToPeer(data.target, data);
                 return; // Don't store/display messages being relayed
             }
@@ -1054,12 +1054,20 @@ function processChatMessage(data, fromId) {
     storeMessage(chatId, data);
 }
 
+/**
+ * Normalize group chat ID for consistency
+ * Maps 'group' to 'general' to ensure compatibility
+ */
+function normalizeGroupId(chatId) {
+    return (chatId === 'group') ? 'general' : chatId;
+}
+
 function storeMessage(chatId, msg) {
     // Legacy function for backward compatibility
     // Route to new state structure based on type
     if (chatId === 'group' || chatId === 'general' || state.groups[chatId]) {
         // Normalize group chat ID
-        const groupId = (chatId === 'group') ? 'general' : chatId;
+        const groupId = normalizeGroupId(chatId);
         
         if (!state.groups[groupId]) {
             console.log('Creating new group:', groupId);
