@@ -6,7 +6,7 @@
 
 Peer-to-peer chat with WebRTC, end-to-end encryption, and zero servers.
 
-• Live Demo: https://BRIGHTEDUFUL.github.io/group-3-INFINITY-LINK-PROJECT/
+• Live Demo: <https://BRIGHTEDUFUL.github.io/group-3-INFINITY-LINK-PROJECT/>
 • Contributors: see [CONTRIBUTORS.md](CONTRIBUTORS.md)
 • Architecture: see [ARCHITECTURE.md](ARCHITECTURE.md)
 
@@ -43,7 +43,7 @@ The application uses a **Star Topology** where:
 - **Relay**: Group messages relay through host to all peers
 
 ### Message Flow
-```
+```text
 User A → Compose Message
     ↓
 Encrypt (if private)
@@ -218,6 +218,31 @@ Tested with:
 Notes for hosted use:
 - Links generated in-app already use the current path, so invites work under the repo subpath.
 - Keep the host tab open; it relays group traffic.
+
+## 🌐 Networking Setup (TURN-ready)
+
+For toughest NAT scenarios, configure TURN:
+
+1) Edit `app.js` → `NETWORK_CONFIG`:
+
+```javascript
+const NETWORK_CONFIG = {
+    useTurn: true,
+    iceTransportPolicy: 'all', // or 'relay' for TURN-only
+    turnServers: [
+        { urls: 'turn:turn.yourdomain.com:3478', username: 'user', credential: 'pass' }
+    ]
+};
+```
+
+2) How invites connect easily
+- Host creates a group → app generates a WebRTC offer and embeds it into the invite link.
+- Guest opens the link → app auto-joins and generates an answer (auto-copied to clipboard).
+- Host clicks “Paste & Accept” → connection finalizes; status shows “Session Active”.
+
+3) If connection drops
+- The app shows “Reconnecting…” and attempts ICE restart automatically.
+- With TURN enabled, set `iceTransportPolicy: 'relay'` to force relayed paths if STUN-only fails.
 - Use HTTPS (GitHub Pages provides it) so WebRTC and clipboard APIs are allowed.
 
 ### Requirements
