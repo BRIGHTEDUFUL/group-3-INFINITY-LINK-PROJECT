@@ -8,6 +8,7 @@ Peer-to-peer chat with WebRTC, end-to-end encryption, and zero servers.
 
 • Live Demo: https://BRIGHTEDUFUL.github.io/group-3-INFINITY-LINK-PROJECT/
 • Contributors: see [CONTRIBUTORS.md](CONTRIBUTORS.md)
+• Architecture: see [ARCHITECTURE.md](ARCHITECTURE.md)
 
 **Infinity Link** is a fully functional, real-world ready peer-to-peer chat application that requires **no server**. It uses **WebRTC** for secure, encrypted messaging between users.
 
