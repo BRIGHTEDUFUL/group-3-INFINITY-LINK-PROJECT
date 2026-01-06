@@ -1361,6 +1361,13 @@ async function joinNetwork() {
         const answerInput = document.getElementById('join-answer-output');
         if (answerInput) {
             answerInput.value = answerCode;
+            // Auto-copy the answer to clipboard for quick sharing back to host
+            try {
+                await navigator.clipboard.writeText(answerCode);
+                showNotification('Answer copied. Send it back to the host to complete connection.', 'success');
+            } catch (copyErr) {
+                console.warn('Auto-copy failed:', copyErr);
+            }
         }
         showStep('step-join-2');
         
@@ -2227,6 +2234,8 @@ function handleInviteFromHash() {
                 joinNetwork();
             }
         }
+        // Clear the URL hash to avoid re-triggering when navigating
+        try { history.replaceState(null, document.title, window.location.pathname + window.location.search); } catch {}
     } catch (e) {
         console.error('Invite hash handling failed:', e);
     }
