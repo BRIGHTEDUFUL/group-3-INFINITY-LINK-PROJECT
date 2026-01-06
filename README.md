@@ -6,7 +6,7 @@
 
 **Real-time peer-to-peer encrypted chat. No servers, no tracking, just direct messaging.**
 
-• Live Demo: <https://BRIGHTEDUFUL.github.io/group-3-INFINITY-LINK-PROJECT/>  
+• **Host It Now**: [Hosting Guide](HOSTING.md) (GitHub Pages, Vercel, Netlify)  
 • Complete Guide: [GUIDE.md](GUIDE.md)  
 • Contributors: [CONTRIBUTORS.md](CONTRIBUTORS.md)
 
