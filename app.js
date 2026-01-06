@@ -9,6 +9,7 @@ const state = {
     username: 'User_' + Math.floor(Math.random() * 1000),
     isHost: false,
     connecting: false,
+    pendingMessages: [],
     
     // DUAL CHAT STATE
     groups: {
@@ -1150,6 +1151,8 @@ function setupGateway(pc, dc) {
             }, peerId);
             
             console.log('Peer connected:', peerId);
+            // Send any queued messages now that a channel is open
+            flushPendingMessages();
         } catch (e) {
             console.error('Data channel open error:', e);
         }
@@ -1318,6 +1321,8 @@ async function joinNetwork() {
                     }));
                     
                     console.log('Data channel opened, sent HI');
+                    // Flush any messages queued during connecting
+                    flushPendingMessages();
                 } catch (err) {
                     console.error('Data channel open error:', err);
                 }
@@ -2143,13 +2148,18 @@ async function sendChatMessage() {
             return;
         }
 
-        // Validate we have a connection
-        if (Object.keys(peers).length === 0 && !state.isHost) {
-            if (state.connecting) {
-                showNotification('⏳ Connecting… please wait', 'info');
-            } else {
-                showNotification('⚠️ Not connected to network yet', 'error');
-            }
+        // If no open channels, queue the message and inform user
+        const hasOpen = Object.keys(peers).some(pid => peers[pid]?.channel?.readyState === 'open');
+        if (!hasOpen) {
+            state.pendingMessages.push({
+                content: text,
+                chatType: state.activeChat.type,
+                chatId: state.activeChat.id
+            });
+            showNotification(state.connecting ? '⏳ Queued: will send when connected' : '⚠️ No peers yet: message queued', 'info');
+            chatElements.messageInput.value = '';
+            chatElements.messageInput.focus();
+            chatElements.messageInput.style.height = 'auto';
             return;
         }
 
@@ -2165,6 +2175,26 @@ async function sendChatMessage() {
     } catch (e) {
         console.error('Send chat message error:', e);
         showNotification('Failed to send message', 'error');
+    }
+}
+
+function flushPendingMessages() {
+    try {
+        if (!state.pendingMessages || state.pendingMessages.length === 0) return;
+        const originalActive = { ...state.activeChat };
+        const hasOpen = Object.keys(peers).some(pid => peers[pid]?.channel?.readyState === 'open');
+        if (!hasOpen) return;
+        const toSend = [...state.pendingMessages];
+        state.pendingMessages = [];
+        toSend.forEach(item => {
+            state.activeChat.type = item.chatType;
+            state.activeChat.id = item.chatId;
+            sendMessage(item.content);
+        });
+        state.activeChat = originalActive;
+        showNotification(`✅ Sent ${toSend.length} queued message(s)`, 'success');
+    } catch (e) {
+        console.error('Flush pending messages error:', e);
     }
 }
 
@@ -2367,9 +2397,19 @@ function processJoinInput() {
         let code = (document.getElementById('join-offer-input')?.value || '').trim() ||
               (document.getElementById('join-link-input')?.value || '').trim();
         
-        // If it's a link, extract the code
+        // If it's a link, extract embedded code
         if (code.includes('#init=')) {
             code = code.split('#init=')[1];
+        } else if (code.includes('#invite=')) {
+            try {
+                const inviteCode = code.split('#invite=')[1];
+                const inviteData = JSON.parse(atob(inviteCode));
+                if (inviteData && typeof inviteData.networkOffer === 'string') {
+                    code = inviteData.networkOffer.trim();
+                }
+            } catch (e) {
+                console.warn('Failed to parse invite link in join input:', e);
+            }
         }
         
         if (code && code.length > 0) {
