@@ -1248,6 +1248,22 @@ async function finalizeHostConnection() {
     }
 }
 
+async function pasteHostAnswerAndAccept() {
+    try {
+        if (!navigator.clipboard || !navigator.clipboard.readText) {
+            alert('Clipboard read not supported. Please paste manually.');
+            return;
+        }
+        const txt = await navigator.clipboard.readText();
+        const input = document.getElementById('host-answer-input');
+        if (input) input.value = (txt || '').trim();
+        await finalizeHostConnection();
+    } catch (e) {
+        console.error('Paste & Accept error:', e);
+        alert('Failed to paste from clipboard. Please paste manually.');
+    }
+}
+
 async function joinNetwork() {
     try {
         state.connecting = true;
@@ -2465,6 +2481,7 @@ if (document.readyState === 'loading') {
 window.startHost = initHost;
 window.startJoin = joinNetwork;
 window.finalizeConnection = finalizeHostConnection;
+window.pasteHostAnswerAndAccept = pasteHostAnswerAndAccept;
 window.generateAnswer = processJoinInput;
 window.copyToClipboard = copyToClipboard;
 window.showStep = showStep;

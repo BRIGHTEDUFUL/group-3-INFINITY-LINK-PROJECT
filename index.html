@@ -482,7 +482,11 @@
             <h2><ion-icon name="pulse"></ion-icon> Accept Peer</h2>
             <p>Paste the reply code from your friend to let them in.</p>
             <textarea id="host-answer-input" placeholder="Paste reply code here..."></textarea>
-            <button class="btn full-width" onclick="finalizeConnection()"><ion-icon name="checkmark-circle"></ion-icon> Accept Connection</button>
+            <div class="actions-row">
+                <button class="btn" onclick="finalizeConnection()"><ion-icon name="checkmark-circle"></ion-icon> Accept Connection</button>
+                <button class="btn-secondary" onclick="pasteHostAnswerAndAccept()"><ion-icon name="clipboard"></ion-icon> Paste & Accept</button>
+            </div>
+            <p class="hint-text"><ion-icon name="information-circle"></ion-icon> Tip: The guest app auto-copies the reply. Use "Paste & Accept" to finalize faster.</p>
             <button class="btn-text" onclick="showStep('step-host-1')"><ion-icon name="arrow-back"></ion-icon> Back</button>
         </div>
 
